@@ -4,10 +4,54 @@ Handles listing and serving downloaded anime files
 """
 from flask import Blueprint, jsonify, send_file, current_app
 from datetime import datetime
+from pathlib import Path
+import mimetypes
 import os
 from app.utils import login_required
 
 library_bp = Blueprint('library', __name__, url_prefix='/api/library')
+
+VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.m4v'}
+
+
+def _is_video_file(filename):
+    """Return True if file extension is a supported video format."""
+    return Path(filename).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def _resolve_anime_file_path(anime_name, filename):
+    """Safely resolve file path within an anime directory."""
+    download_folder = Path(current_app.config['DOWNLOAD_FOLDER']).resolve()
+    anime_path = (download_folder / anime_name).resolve()
+
+    if not anime_path.exists() or not anime_path.is_dir():
+        return None
+
+    file_path = (anime_path / filename).resolve()
+    if not file_path.is_file():
+        return None
+
+    # Block path traversal outside the selected anime folder.
+    if not file_path.is_relative_to(anime_path):
+        return None
+
+    return file_path
+
+
+def _send_anime_file(anime_name, filename, as_attachment):
+    """Serve a file from a specific anime folder."""
+    file_path = _resolve_anime_file_path(anime_name, filename)
+    if not file_path:
+        return jsonify({"error": "File not found"}), 404
+
+    mimetype, _ = mimetypes.guess_type(file_path.name)
+    return send_file(
+        file_path,
+        as_attachment=as_attachment,
+        download_name=file_path.name,
+        mimetype=mimetype or 'application/octet-stream',
+        conditional=not as_attachment
+    )
 
 @library_bp.route('/list', methods=['GET'])
 @login_required
@@ -63,7 +107,8 @@ def get_anime_files(anime_name):
                     "size": size,
                     "size_mb": round(size / (1024 * 1024), 2),
                     "size_gb": round(size / (1024 * 1024 * 1024), 2),
-                    "modified": datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
+                    "modified": datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
+                    "is_video": _is_video_file(file)
                 })
         
         # Sort by filename
@@ -75,6 +120,30 @@ def get_anime_files(anime_name):
             "total_files": len(files),
             "total_size_mb": round(sum(f['size'] for f in files) / (1024 * 1024), 2)
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@library_bp.route('/stream/<path:anime_name>/<path:filename>', methods=['GET'])
+@login_required
+def stream_file(anime_name, filename):
+    """Stream video file inline for browser playback."""
+    try:
+        file_path = _resolve_anime_file_path(anime_name, filename)
+        if not file_path:
+            return jsonify({"error": "File not found"}), 404
+        if not _is_video_file(file_path.name):
+            return jsonify({"error": "Unsupported media type"}), 400
+
+        return _send_anime_file(anime_name, filename, as_attachment=False)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@library_bp.route('/download/<path:anime_name>/<path:filename>', methods=['GET'])
+@login_required
+def download_anime_file(anime_name, filename):
+    """Download a file from a specific anime directory."""
+    try:
+        return _send_anime_file(anime_name, filename, as_attachment=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

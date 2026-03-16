@@ -347,6 +347,125 @@ label {
     gap: 20px;
 }
 
+/* Video Player */
+.video-player-card {
+    background: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    padding: 18px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-md);
+}
+
+.video-frame {
+    width: 100%;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+.video-player {
+    width: 100%;
+    max-height: 70vh;
+    display: block;
+    background: #000;
+}
+
+.player-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.time-label {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    min-width: 48px;
+    text-align: center;
+}
+
+.player-progress-row input[type="range"] {
+    flex: 1;
+}
+
+.player-controls-row {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.player-controls-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.player-controls-right {
+    margin-left: auto;
+}
+
+.btn-player,
+.btn-player-primary {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-light);
+    color: var(--text-color);
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.btn-player-primary {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-dark);
+}
+
+.btn-player:hover,
+.btn-player-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+#speed-select {
+    min-width: 82px;
+}
+
+#volume-slider {
+    width: 130px;
+}
+
+.btn-download-current {
+    background: rgba(16, 185, 129, 0.16);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: var(--text-color);
+    padding: 10px 14px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.btn-download-current:hover {
+    background: rgba(16, 185, 129, 0.24);
+}
+
+.now-playing {
+    margin-top: 12px;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.player-help {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+}
+
 /* Episode List */
 .episode-list {
     display: flex;
@@ -372,8 +491,20 @@ label {
     box-shadow: var(--shadow-lg);
 }
 
+.episode-item-active {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.35), var(--shadow-md);
+}
+
 .episode-info {
     flex: 1;
+}
+
+.episode-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .episode-name {
@@ -410,6 +541,26 @@ label {
 
 .btn-download:active {
     transform: translateY(0);
+}
+
+.btn-watch-inline {
+    background: var(--surface-light);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-watch-inline:hover {
+    border-color: var(--primary-color);
+}
+
+.btn-watch-disabled,
+.btn-watch-disabled:hover {
+    opacity: 0.55;
+    cursor: not-allowed;
+    border-color: var(--border-color);
 }
 
 /* Back Link */
@@ -658,5 +809,27 @@ label {
 
     .btn-download {
         width: 100%;
+    }
+
+    .player-controls-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .player-controls-right {
+        margin-left: 0;
+    }
+
+    .player-controls-group {
+        justify-content: center;
+    }
+
+    .episode-actions {
+        width: 100%;
+        justify-content: center;
+    }
+
+    #volume-slider {
+        width: 100px;
     }
 }

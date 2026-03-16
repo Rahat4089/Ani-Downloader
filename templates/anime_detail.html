@@ -16,6 +16,49 @@
         
         <h1>🎬 {{ anime_name }}</h1>
         <div id="anime-stats" class="subtitle"></div>
+
+        <div class="video-player-card">
+            <div class="video-frame">
+                <video id="video-player" class="video-player" preload="metadata"></video>
+            </div>
+
+            <div class="player-progress-row">
+                <span id="current-time" class="time-label">00:00</span>
+                <input id="progress-slider" type="range" min="0" max="100" value="0" step="0.1">
+                <span id="duration-time" class="time-label">00:00</span>
+            </div>
+
+            <div class="player-controls-row">
+                <div class="player-controls-group">
+                    <button id="prev-btn" class="btn btn-player" type="button">⏮ Prev</button>
+                    <button id="rewind-btn" class="btn btn-player" type="button">⏪ 10s</button>
+                    <button id="play-toggle-btn" class="btn btn-player-primary" type="button">▶️ Play</button>
+                    <button id="forward-btn" class="btn btn-player" type="button">10s ⏩</button>
+                    <button id="next-btn" class="btn btn-player" type="button">Next ⏭</button>
+                </div>
+
+                <div class="player-controls-group player-controls-right">
+                    <button id="mute-btn" class="btn btn-player" type="button">🔊</button>
+                    <input id="volume-slider" type="range" min="0" max="1" value="1" step="0.05">
+                    <select id="speed-select">
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1" selected>1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                    </select>
+                    <button id="pip-btn" class="btn btn-player" type="button">PiP</button>
+                    <button id="fullscreen-btn" class="btn btn-player" type="button">⛶ Full</button>
+                    <a id="download-current-btn" class="btn btn-download-current" href="#">⬇️ Download Current</a>
+                </div>
+            </div>
+
+            <div id="now-playing" class="now-playing">Select an episode to start watching.</div>
+            <p class="player-help">
+                Shortcuts: Space play/pause • ←/→ seek • ↑/↓ volume • M mute • F fullscreen • N/P next/prev
+            </p>
+        </div>
         
         <div id="episode-list" class="episode-list">
             <div class="loading">Loading episodes...</div>
@@ -24,47 +67,300 @@
 
     <script>
         const animeName = "{{ anime_name }}";
-        
-        async function loadAnimeFiles() {
-            try {
-                const response = await fetch(`/api/library/anime/${encodeURIComponent(animeName)}`);
-                const data = await response.json();
-                
-                // Update stats
-                document.getElementById('anime-stats').innerHTML = 
-                    `${data.total_files} episodes • ${data.total_size_mb.toFixed(2)} MB total`;
-                
-                const container = document.getElementById('episode-list');
-                
-                if (!data.files || data.files.length === 0) {
-                    container.innerHTML = '<div class="empty-state">No files found</div>';
-                    return;
+        let episodes = [];
+        let currentEpisodeIndex = -1;
+
+        const videoPlayer = document.getElementById('video-player');
+        const progressSlider = document.getElementById('progress-slider');
+        const currentTimeLabel = document.getElementById('current-time');
+        const durationTimeLabel = document.getElementById('duration-time');
+        const playToggleBtn = document.getElementById('play-toggle-btn');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const rewindBtn = document.getElementById('rewind-btn');
+        const forwardBtn = document.getElementById('forward-btn');
+        const muteBtn = document.getElementById('mute-btn');
+        const volumeSlider = document.getElementById('volume-slider');
+        const speedSelect = document.getElementById('speed-select');
+        const pipBtn = document.getElementById('pip-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const nowPlaying = document.getElementById('now-playing');
+        const downloadCurrentBtn = document.getElementById('download-current-btn');
+
+        function formatTime(seconds) {
+            if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
+            const totalSeconds = Math.floor(seconds);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const secs = totalSeconds % 60;
+
+            if (hours > 0) {
+                return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            }
+            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+
+        function updatePlayButton() {
+            playToggleBtn.textContent = videoPlayer.paused ? '▶️ Play' : '⏸ Pause';
+        }
+
+        function seekBy(seconds) {
+            if (!Number.isFinite(videoPlayer.duration)) return;
+            const nextTime = Math.min(videoPlayer.duration, Math.max(0, videoPlayer.currentTime + seconds));
+            videoPlayer.currentTime = nextTime;
+        }
+
+        function updateMuteButton() {
+            muteBtn.textContent = videoPlayer.muted || videoPlayer.volume === 0 ? '🔇' : '🔊';
+        }
+
+        function updateEpisodeHighlight() {
+            const items = document.querySelectorAll('.episode-item');
+            items.forEach((item, index) => {
+                item.classList.toggle('episode-item-active', index === currentEpisodeIndex);
+            });
+        }
+
+        function getStreamUrl(fileName) {
+            return `/api/library/stream/${encodeURIComponent(animeName)}/${encodeURIComponent(fileName)}`;
+        }
+
+        function getDownloadUrl(fileName) {
+            return `/api/library/download/${encodeURIComponent(animeName)}/${encodeURIComponent(fileName)}`;
+        }
+
+        function findPlayableIndex(startIndex, step) {
+            for (let idx = startIndex; idx >= 0 && idx < episodes.length; idx += step) {
+                if (episodes[idx].is_video) {
+                    return idx;
                 }
-                
-                container.innerHTML = data.files.map(file => `
+            }
+            return -1;
+        }
+
+        async function loadEpisode(index, autoplay = true) {
+            const selected = episodes[index];
+            if (!selected || !selected.is_video) return;
+
+            currentEpisodeIndex = index;
+            videoPlayer.src = getStreamUrl(selected.name);
+            downloadCurrentBtn.href = getDownloadUrl(selected.name);
+            downloadCurrentBtn.setAttribute('download', selected.name);
+            nowPlaying.textContent = `Now playing: ${selected.name}`;
+            updateEpisodeHighlight();
+            videoPlayer.load();
+
+            if (autoplay) {
+                try {
+                    await videoPlayer.play();
+                } catch (error) {
+                    console.debug('Autoplay blocked by browser policy:', error);
+                }
+            }
+        }
+
+        function renderEpisodes() {
+            const container = document.getElementById('episode-list');
+
+            if (!episodes.length) {
+                container.innerHTML = '<div class="empty-state">No files found</div>';
+                return;
+            }
+
+            container.innerHTML = episodes.map((file, index) => {
+                const sizeLabel = file.size_gb >= 1 ? `${file.size_gb.toFixed(2)} GB` : `${file.size_mb.toFixed(2)} MB`;
+                const watchButton = file.is_video
+                    ? `<button class="btn btn-watch-inline" type="button" onclick="loadEpisode(${index}, true)">▶️ Watch</button>`
+                    : `<button class="btn btn-watch-inline btn-watch-disabled" type="button" disabled title="Not a supported video format">N/A</button>`;
+
+                return `
                     <div class="episode-item">
                         <div class="episode-info">
                             <div class="episode-name">${file.name}</div>
                             <div class="episode-meta">
-                                ${file.size_gb >= 1 ? 
-                                    `${file.size_gb.toFixed(2)} GB` : 
-                                    `${file.size_mb.toFixed(2)} MB`
-                                } • Modified: ${new Date(file.modified).toLocaleString()}
+                                ${sizeLabel} • Modified: ${new Date(file.modified).toLocaleString()} ${file.is_video ? '' : '• Not playable'}
                             </div>
                         </div>
-                        <a href="/api/library/file/${encodeURIComponent(file.name)}" 
-                           class="btn btn-download" 
-                           download="${file.name}">
-                            ⬇️ Download
-                        </a>
+                        <div class="episode-actions">
+                            ${watchButton}
+                            <a href="${getDownloadUrl(file.name)}"
+                               class="btn btn-download"
+                               download="${file.name}">
+                                ⬇️ Download
+                            </a>
+                        </div>
                     </div>
-                `).join('');
+                `;
+            }).join('');
+
+            updateEpisodeHighlight();
+        }
+        
+        async function loadAnimeFiles() {
+            try {
+                const response = await fetch(`/api/library/anime/${encodeURIComponent(animeName)}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                episodes = data.files || [];
+                
+                // Update stats
+                const playableCount = episodes.filter(file => file.is_video).length;
+                document.getElementById('anime-stats').innerHTML = 
+                    `${data.total_files} files • ${playableCount} playable • ${data.total_size_mb.toFixed(2)} MB total`;
+
+                renderEpisodes();
+
+                const firstPlayableIndex = episodes.findIndex(file => file.is_video);
+                if (firstPlayableIndex >= 0) {
+                    loadEpisode(firstPlayableIndex, false);
+                } else {
+                    nowPlaying.textContent = 'No playable video files were found in this folder.';
+                }
             } catch (error) {
                 console.error('Error loading anime files:', error);
                 document.getElementById('episode-list').innerHTML = 
                     '<div class="error">Failed to load episodes</div>';
             }
         }
+
+        playToggleBtn.addEventListener('click', async () => {
+            if (!videoPlayer.src) return;
+
+            if (videoPlayer.paused) {
+                try {
+                    await videoPlayer.play();
+                } catch (error) {
+                    console.error('Unable to start playback:', error);
+                }
+            } else {
+                videoPlayer.pause();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (!episodes.length || currentEpisodeIndex <= 0) return;
+            const prevPlayable = findPlayableIndex(currentEpisodeIndex - 1, -1);
+            if (prevPlayable >= 0) {
+                loadEpisode(prevPlayable, true);
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (!episodes.length || currentEpisodeIndex < 0 || currentEpisodeIndex >= episodes.length - 1) return;
+            const nextPlayable = findPlayableIndex(currentEpisodeIndex + 1, 1);
+            if (nextPlayable >= 0) {
+                loadEpisode(nextPlayable, true);
+            }
+        });
+
+        rewindBtn.addEventListener('click', () => seekBy(-10));
+        forwardBtn.addEventListener('click', () => seekBy(10));
+
+        progressSlider.addEventListener('input', () => {
+            if (!Number.isFinite(videoPlayer.duration)) return;
+            const percent = Number(progressSlider.value) / 100;
+            videoPlayer.currentTime = videoPlayer.duration * percent;
+        });
+
+        volumeSlider.addEventListener('input', () => {
+            videoPlayer.volume = Number(volumeSlider.value);
+            videoPlayer.muted = videoPlayer.volume === 0;
+            updateMuteButton();
+        });
+
+        muteBtn.addEventListener('click', () => {
+            videoPlayer.muted = !videoPlayer.muted;
+            if (!videoPlayer.muted && videoPlayer.volume === 0) {
+                videoPlayer.volume = 1;
+                volumeSlider.value = 1;
+            }
+            updateMuteButton();
+        });
+
+        speedSelect.addEventListener('change', () => {
+            videoPlayer.playbackRate = Number(speedSelect.value);
+        });
+
+        pipBtn.addEventListener('click', async () => {
+            if (!document.pictureInPictureEnabled) return;
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                } else if (videoPlayer.src) {
+                    await videoPlayer.requestPictureInPicture();
+                }
+            } catch (error) {
+                console.debug('Picture in Picture unavailable:', error);
+            }
+        });
+
+        fullscreenBtn.addEventListener('click', async () => {
+            const wrapper = document.querySelector('.video-frame');
+            if (!document.fullscreenElement) {
+                await wrapper.requestFullscreen();
+            } else {
+                await document.exitFullscreen();
+            }
+        });
+
+        videoPlayer.addEventListener('timeupdate', () => {
+            if (!Number.isFinite(videoPlayer.duration) || videoPlayer.duration <= 0) return;
+            progressSlider.value = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+            currentTimeLabel.textContent = formatTime(videoPlayer.currentTime);
+        });
+
+        videoPlayer.addEventListener('loadedmetadata', () => {
+            durationTimeLabel.textContent = formatTime(videoPlayer.duration);
+            currentTimeLabel.textContent = formatTime(videoPlayer.currentTime);
+            progressSlider.value = 0;
+        });
+
+        videoPlayer.addEventListener('play', updatePlayButton);
+        videoPlayer.addEventListener('pause', updatePlayButton);
+        videoPlayer.addEventListener('volumechange', updateMuteButton);
+
+        videoPlayer.addEventListener('ended', () => {
+            if (currentEpisodeIndex >= 0 && currentEpisodeIndex < episodes.length - 1) {
+                const nextPlayable = findPlayableIndex(currentEpisodeIndex + 1, 1);
+                if (nextPlayable >= 0) {
+                    loadEpisode(nextPlayable, true);
+                }
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+            if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+            if (event.code === 'Space') {
+                event.preventDefault();
+                playToggleBtn.click();
+            } else if (event.code === 'ArrowLeft') {
+                event.preventDefault();
+                seekBy(-5);
+            } else if (event.code === 'ArrowRight') {
+                event.preventDefault();
+                seekBy(5);
+            } else if (event.code === 'ArrowUp') {
+                event.preventDefault();
+                videoPlayer.volume = Math.min(1, videoPlayer.volume + 0.05);
+                volumeSlider.value = videoPlayer.volume;
+            } else if (event.code === 'ArrowDown') {
+                event.preventDefault();
+                videoPlayer.volume = Math.max(0, videoPlayer.volume - 0.05);
+                volumeSlider.value = videoPlayer.volume;
+            } else if (event.key.toLowerCase() === 'm') {
+                muteBtn.click();
+            } else if (event.key.toLowerCase() === 'f') {
+                fullscreenBtn.click();
+            } else if (event.key.toLowerCase() === 'n') {
+                nextBtn.click();
+            } else if (event.key.toLowerCase() === 'p') {
+                prevBtn.click();
+            }
+        });
         
         loadAnimeFiles();
     </script>
