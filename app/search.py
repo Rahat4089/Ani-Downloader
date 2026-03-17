@@ -26,35 +26,48 @@ def search_anime(query: str, max_results: int = 20) -> List[Dict[str, str]]:
             "upgrade-insecure-requests": "1"
         }
         
-        # AnimeKai search URL
-        search_url = f"https://anikai.to/browser?keyword={query}"
-        
-        response = scraper.get(search_url, headers=headers, timeout=15)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+        soups = []
+        for base in ["https://anikai.to", "https://animekai.to"]:
+            for path in [f"/browser?keyword={query}", f"/search?keyword={query}", f"/browser?q={query}"]:
+                search_url = f"{base}{path}"
+                try:
+                    local_headers = dict(headers)
+                    local_headers["Referer"] = f"{base}/"
+                    response = scraper.get(search_url, headers=local_headers, timeout=15)
+                    response.raise_for_status()
+                    soups.append((base, BeautifulSoup(response.text, 'html.parser'), response))
+                except Exception:
+                    continue
+
+        if not soups:
+            return []
+
         results = []
         
         # Debug: Print some of the HTML to see structure
-        print(f"Response status: {response.status_code}")
-        print(f"Response length: {len(response.text)}")
+        print(f"Response status: {soups[0][2].status_code}")
+        print(f"Response length: {len(soups[0][2].text)}")
         
         # Try multiple possible selectors
-        anime_items = (
-            soup.select('.anime-item') or 
-            soup.select('.film_list-wrap .flw-item') or 
-            soup.select('.block_area-content .item') or
-            soup.select('article') or
-            soup.select('.anime-card') or
-            soup.select('[class*="anime"]') or
-            soup.select('[class*="item"]')
-        )
+        anime_items = []
+        for base, soup, _ in soups:
+            anime_items.extend(
+                [(base, item) for item in (
+                    soup.select('.anime-item') or 
+                    soup.select('.film_list-wrap .flw-item') or 
+                    soup.select('.block_area-content .item') or
+                    soup.select('article') or
+                    soup.select('.anime-card') or
+                    soup.select('[class*="anime"]') or
+                    soup.select('[class*="item"]')
+                )]
+            )
         
         print(f"Found {len(anime_items)} potential items")
         
         seen_urls = set()
         
-        for item in anime_items[:max_results * 2]:  # Check more items to account for duplicates
+        for base, item in anime_items[:max_results * 2]:  # Check more items to account for duplicates
             try:
                 # Try multiple selector patterns
                 link_elem = (
@@ -78,7 +91,7 @@ def search_anime(query: str, max_results: int = 20) -> List[Dict[str, str]]:
                 if link_elem:
                     anime_url = link_elem.get('href', '')
                     if not anime_url.startswith('http'):
-                        anime_url = f"https://anikai.to{anime_url}"
+                        anime_url = f"{base}{anime_url}"
                     
                     # Skip duplicates
                     if anime_url in seen_urls:

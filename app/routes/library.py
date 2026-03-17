@@ -51,10 +51,13 @@ def _format_runtime(seconds):
 
 def _get_media_duration_seconds(file_path):
     """Read media duration using ffprobe when available."""
+    ffprobe_bin = shutil.which('ffprobe')
+    if not ffprobe_bin:
+        return None
     try:
         result = subprocess.run(
             [
-                'ffprobe',
+                ffprobe_bin,
                 '-v', 'error',
                 '-show_entries', 'format=duration',
                 '-of', 'default=noprint_wrappers=1:nokey=1',
@@ -75,36 +78,43 @@ def _get_media_duration_seconds(file_path):
 
 def _ensure_episode_thumbnail(anime_path, file_path, duration_seconds):
     """Generate and cache a thumbnail image for a video episode."""
-    thumbnail_dir = anime_path / '.thumbnails'
-    thumbnail_dir.mkdir(exist_ok=True)
-    thumbnail_path = thumbnail_dir / f"{file_path.stem}.jpg"
-
-    # Rebuild thumbnail if source was updated.
-    if thumbnail_path.exists() and thumbnail_path.stat().st_mtime >= file_path.stat().st_mtime:
-        return thumbnail_path
-
-    seek_second = 2
-    if duration_seconds and duration_seconds > 20:
-        seek_second = int(min(45, max(2, duration_seconds * 0.18)))
-
-    result = subprocess.run(
-        [
-            'ffmpeg',
-            '-y',
-            '-ss', str(seek_second),
-            '-i', str(file_path),
-            '-frames:v', '1',
-            '-vf', 'scale=480:-1',
-            str(thumbnail_path)
-        ],
-        capture_output=True,
-        text=True,
-        timeout=12,
-        check=False
-    )
-    if result.returncode != 0 or not thumbnail_path.exists():
+    ffmpeg_bin = shutil.which('ffmpeg')
+    if not ffmpeg_bin:
         return None
-    return thumbnail_path
+
+    try:
+        thumbnail_dir = anime_path / '.thumbnails'
+        thumbnail_dir.mkdir(exist_ok=True)
+        thumbnail_path = thumbnail_dir / f"{file_path.stem}.jpg"
+
+        # Rebuild thumbnail if source was updated.
+        if thumbnail_path.exists() and thumbnail_path.stat().st_mtime >= file_path.stat().st_mtime:
+            return thumbnail_path
+
+        seek_second = 2
+        if duration_seconds and duration_seconds > 20:
+            seek_second = int(min(45, max(2, duration_seconds * 0.18)))
+
+        result = subprocess.run(
+            [
+                ffmpeg_bin,
+                '-y',
+                '-ss', str(seek_second),
+                '-i', str(file_path),
+                '-frames:v', '1',
+                '-vf', 'scale=480:-1',
+                str(thumbnail_path)
+            ],
+            capture_output=True,
+            text=True,
+            timeout=12,
+            check=False
+        )
+        if result.returncode != 0 or not thumbnail_path.exists():
+            return None
+        return thumbnail_path
+    except Exception:
+        return None
 
 
 def _build_subtitle_entries(anime_name, anime_path, episode_filename):
