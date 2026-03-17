@@ -370,11 +370,51 @@ label {
     min-height: 320px;
 }
 
+.video-frame-clean {
+    position: relative;
+    min-height: 320px;
+}
+
 .video-player {
     width: 100%;
     max-height: 70vh;
     display: block;
     background: #000;
+    cursor: pointer;
+}
+
+.seek-flash {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.9);
+    background: rgba(15, 20, 25, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-weight: 700;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.seek-flash-visible {
+    animation: seekFlash 0.45s ease-out;
+}
+
+@keyframes seekFlash {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.8);
+    }
+    20% {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(1.06);
+    }
 }
 
 .video-overlay {
@@ -472,6 +512,19 @@ label {
     box-shadow: var(--shadow-sm);
 }
 
+.player-controls-clean .btn-player,
+.player-controls-clean .btn-player-primary {
+    border: 1px solid var(--border-color);
+    background: var(--surface-light);
+    color: var(--text-color);
+}
+
+.player-controls-clean .btn-player-primary {
+    background: var(--primary-color);
+    color: #fff;
+    border-color: var(--primary-dark);
+}
+
 #speed-select {
     min-width: 82px;
 }
@@ -498,6 +551,12 @@ label {
     color: #fff;
     font-weight: 600;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+
+.now-playing-below {
+    margin-top: 10px;
+    color: var(--text-color);
+    text-shadow: none;
 }
 
 .player-help {
