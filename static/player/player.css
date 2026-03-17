@@ -483,3 +483,176 @@
         min-width: 0;
     }
 }
+
+/* Clean minimal controls override */
+.ap-clean-shell {
+    grid-template-columns: 1.9fr minmax(300px, 430px);
+}
+
+.ap-main-clean {
+    padding: 10px;
+}
+
+.ap-video-wrap-clean {
+    min-height: 320px;
+}
+
+.ap-video-wrap-clean.ap-locked::after {
+    content: "Screen Locked";
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15, 23, 42, 0.84);
+    color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 999px;
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    z-index: 6;
+}
+
+.ap-top-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    z-index: 6;
+}
+
+.ap-lock-btn,
+.ap-more-btn {
+    backdrop-filter: blur(3px);
+}
+
+.ap-options-panel {
+    position: absolute;
+    right: 10px;
+    top: 52px;
+    width: 220px;
+    background: rgba(2, 6, 23, 0.94);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 10px;
+    padding: 10px;
+    z-index: 6;
+}
+
+.ap-options-panel label {
+    color: #94a3b8;
+    font-size: 0.78rem;
+    margin-bottom: 4px;
+    display: block;
+}
+
+.ap-options-panel select,
+.ap-options-panel input {
+    margin-bottom: 8px;
+}
+
+.ap-bottom-controls-clean {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    width: min(94%, 760px);
+    background: linear-gradient(to top, rgba(2, 6, 23, 0.88), rgba(2, 6, 23, 0.44));
+    border: 1px solid rgba(125, 211, 252, 0.2);
+    border-radius: 12px;
+    padding: 8px 10px;
+    animation: ap-controls-in 0.2s ease-out;
+}
+
+@keyframes ap-controls-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.ap-control-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ap-play-btn {
+    min-width: 44px;
+    min-height: 40px;
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.38);
+}
+
+.ap-bottom-controls-clean .ap-time {
+    text-align: center;
+    margin-top: 4px;
+    min-width: 0;
+}
+
+.ap-sidebar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ap-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #cbd5e1;
+    font-size: 0.8rem;
+}
+
+.ap-episode-item {
+    display: grid;
+    grid-template-columns: 28px 84px 1fr;
+    align-items: start;
+}
+
+.ap-episode-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ap-episode-main {
+    border: none;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+}
+
+.ap-episode-item-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.ap-mini-btn {
+    min-height: 30px;
+    padding: 6px 10px;
+    font-size: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+    .ap-clean-shell {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .ap-bottom-controls-clean {
+        width: 96%;
+        padding: 7px;
+    }
+
+    .ap-control-center {
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .ap-options-panel {
+        width: min(90vw, 240px);
+    }
+}

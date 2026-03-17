@@ -347,6 +347,34 @@ label {
     gap: 20px;
 }
 
+.library-bulk-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.library-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.library-series-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.library-series-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 /* Video Player */
 .video-player-card {
     background: var(--card-bg);

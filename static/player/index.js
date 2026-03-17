@@ -19,6 +19,7 @@ class AnimeStreamingPlayerApp {
         this.touchStart = null;
         this.lastTap = { side: "", ts: 0 };
         this.resumeSaveSecond = -1;
+        this.locked = false;
     }
 
     async init() {
@@ -36,15 +37,14 @@ class AnimeStreamingPlayerApp {
         this.ui = new PlayerUI(this.root, {
             onAction: (action) => this.handleAction(action),
             onSeekPercent: (percent) => this.seekPercent(percent),
-            onPreviewHover: (ratio, leftPx) => this.handlePreviewHover(ratio, leftPx),
             onVolumeChange: (volume) => this.setVolume(volume),
             onSpeedChange: (speed) => this.setSpeed(speed),
             onServerChange: (serverIndex) => this.switchServer(Number(serverIndex)),
             onQualityChange: (qualityId) => this.playerCore?.setQuality(qualityId),
             onAudioTrackChange: (trackId) => this.playerCore?.setAudioTrack(trackId),
             onSubtitleTrackChange: (trackId) => this.subtitles?.setActiveTrack(trackId),
-            onSubtitleStyleChange: (stylePatch) => this.subtitles?.applyStyle(stylePatch),
-            onEpisodeSelect: (index) => this.loadEpisode(index, true)
+            onEpisodeSelect: (index) => { if (!this.locked) this.loadEpisode(index, true); },
+            onDeleteEpisode: (index) => { if (!this.locked) this.deleteEpisode(index); }
         });
 
         this.playerCore = new PlayerCore(this.ui.video, {
@@ -107,6 +107,8 @@ class AnimeStreamingPlayerApp {
                 episodes: [{
                     id: "episode-1",
                     filename: "episode-1",
+                    download_url: "",
+                    delete_url: "",
                     episode_number: 1,
                     thumbnail: "/static/player/episode-placeholder.svg",
                     metadata: {
@@ -144,22 +146,22 @@ class AnimeStreamingPlayerApp {
         const episode = this.config.episodes[boundedIndex];
         if (!episode) return;
 
-        this.clearAutoNext();
         this.currentEpisodeIndex = boundedIndex;
         this.currentEpisode = episode;
         this.resumeSaveSecond = -1;
 
-        this.ui.setEpisodes(this.config.episodes, boundedIndex);
-        this.ui.setEpisodeMeta(episode.metadata?.title, episode.metadata?.synopsis);
+        const episodesForUi = this.config.episodes.map((item) => ({
+            ...item,
+            download_url: item.download_url || `/api/library/download/${encodeURIComponent(this.animeName)}/${encodeURIComponent(item.filename || item.id || "")}`
+        }));
+        this.ui.setEpisodes(episodesForUi, boundedIndex);
         this.ui.setServerOptions(episode.config.video_sources || [], "0");
-        this.ui.setServerChip(episode.config.video_sources?.[0]?.label || "Server");
         this.ui.setError("");
-        this.ui.setStatus("Loading");
+        this.ui.clearEpisodeSelection();
 
         this.subtitles.loadTracks(episode.config.subtitles || []);
         const subtitleOptions = this.subtitles.getTrackOptions();
         this.ui.setSubtitleOptions(subtitleOptions, subtitleOptions.find((item) => item.id !== "off")?.id || "off");
-        this.ui.setSoftSubtitleStatus((episode.config.subtitles || []).length > 0);
 
         const resumeTime = this.readResumeTime(episode.id);
         const loaded = await this.playerCore.loadSources(episode.config.video_sources || [], {
@@ -169,27 +171,9 @@ class AnimeStreamingPlayerApp {
         if (!loaded) return;
 
         this.playerCore.preloadUrl(this.getNextEpisodeFirstSourceUrl());
-        this.ui.setAudioStatus("Audio: Default");
         this.analytics.start(episode.id);
         this.syncProgress({ event: "episode_loaded" });
-        this.requestIntroDetectionIfEnabled(episode);
-    }
-
-    async requestIntroDetectionIfEnabled(episode) {
-        if (!window.animePlayerHooks?.onIntroDetectionRequest) return;
-        try {
-            const detection = await window.animePlayerHooks.onIntroDetectionRequest({
-                anime_name: this.animeName,
-                episode_id: episode.id
-            });
-            if (!detection) return;
-            if (Number.isFinite(detection.intro_start)) episode.config.intro_start = detection.intro_start;
-            if (Number.isFinite(detection.intro_end)) episode.config.intro_end = detection.intro_end;
-            if (Number.isFinite(detection.outro_start)) episode.config.outro_start = detection.outro_start;
-            if (Number.isFinite(detection.outro_end)) episode.config.outro_end = detection.outro_end;
-        } catch (error) {
-            console.debug("Intro detection hook failed:", error);
-        }
+        this.ui.revealControls();
     }
 
     attachVideoEvents() {
@@ -197,30 +181,26 @@ class AnimeStreamingPlayerApp {
 
         video.addEventListener("timeupdate", () => {
             this.ui.updateTime(video.currentTime, video.duration);
-            this.updateSkipButtons(video.currentTime);
             this.saveResumeTimePeriodic(video.currentTime);
             this.syncProgress({ event: "time_update" });
         });
 
         video.addEventListener("play", () => {
             this.ui.setPlayState(true);
-            this.ui.setStatus("Playing");
+            this.ui.hideControlsSoon();
         });
         video.addEventListener("pause", () => {
             this.ui.setPlayState(false);
-            this.ui.setStatus("Paused");
             this.analytics.markDropOff(video.currentTime, video.duration || 0);
             this.saveResumeTime(video.currentTime);
+            this.ui.revealControls();
         });
         video.addEventListener("ended", () => {
             this.analytics.markCompleted(video.duration || 0);
             this.saveResumeTime(0);
-            this.startAutoNextCountdown();
+            this.nextEpisode();
         });
-        video.addEventListener("volumechange", () => {
-            this.ui.setMuteState(video.muted || video.volume === 0);
-            this.ui.volume.value = String(video.volume);
-        });
+        video.addEventListener("volumechange", () => { this.ui.volume.value = String(video.volume); });
         video.addEventListener("click", (event) => this.handleTapToggle(event));
         video.addEventListener("dblclick", (event) => this.handleDoubleTapSeek(event));
     }
@@ -247,13 +227,6 @@ class AnimeStreamingPlayerApp {
             const elapsed = Date.now() - this.touchStart.ts;
             this.touchStart = null;
 
-            if (absX > 50 && absX > absY) {
-                const seekAmount = deltaX > 0 ? this.getLongSeek() : -this.getLongSeek();
-                this.seekRelative(seekAmount);
-                this.ui.showSeekToast(seekAmount > 0 ? `+${Math.abs(seekAmount)}s` : `-${Math.abs(seekAmount)}s`);
-                return;
-            }
-
             if (elapsed < 260 && absX < 20 && absY < 20) {
                 this.handleTapToggle({ clientX: endX, clientY: endY, type: "touch" });
             }
@@ -266,6 +239,7 @@ class AnimeStreamingPlayerApp {
             if (activeTag === "input" || activeTag === "textarea" || activeTag === "select") return;
 
             const key = event.key.toLowerCase();
+            if (this.locked && key !== "u") return;
             if (event.code === "Space") {
                 event.preventDefault();
                 this.togglePlayback();
@@ -282,37 +256,34 @@ class AnimeStreamingPlayerApp {
                 event.preventDefault();
                 this.setVolume(Math.max(0, this.ui.video.volume - 0.05));
             } else if (key === "m") {
-                this.toggleMute();
+                this.toggleOptionsMenu();
             } else if (key === "f") {
                 this.toggleFullscreen();
             } else if (key === "n") {
                 this.nextEpisode();
             } else if (key === "p") {
                 this.prevEpisode();
-            } else if (key === "j") {
-                this.seekRelative(-this.getLongSeek());
-            } else if (key === "l") {
-                this.seekRelative(this.getLongSeek());
+            } else if (key === "u") {
+                this.toggleLock();
             }
         });
     }
 
     handleAction(action) {
+        if (this.locked && action !== "toggle-lock") return;
+        this.ui.revealControls();
         if (action === "play-pause") this.togglePlayback();
         else if (action === "back-10") this.seekRelative(-this.getShortSeek());
         else if (action === "forward-10") this.seekRelative(this.getShortSeek());
         else if (action === "prev-episode") this.prevEpisode();
         else if (action === "next-episode") this.nextEpisode();
-        else if (action === "mute") this.toggleMute();
-        else if (action === "pip") this.togglePip();
         else if (action === "fullscreen") this.toggleFullscreen();
         else if (action === "retry") this.playerCore.retry({ autoplay: true, startTime: this.ui.video.currentTime });
         else if (action === "switch-server") this.switchServer(this.playerCore.currentServerIndex + 1);
-        else if (action === "play-next-now") this.nextEpisode(true);
-        else if (action === "cancel-next") this.clearAutoNext();
-        else if (action === "skip-intro") this.skipToIntroEnd();
-        else if (action === "skip-outro") this.skipToOutroEnd();
-        else if (action === "screenshot") this.captureScreenshot();
+        else if (action === "toggle-options") this.toggleOptionsMenu();
+        else if (action === "toggle-lock") this.toggleLock();
+        else if (action === "delete-selected-episodes") this.deleteSelectedEpisodes();
+        else if (action === "delete-series") this.deleteSeries();
     }
 
     onCoreState(state) {
@@ -324,42 +295,42 @@ class AnimeStreamingPlayerApp {
     onCoreError(error) {
         this.ui.setBuffering(false);
         this.ui.setError(error?.message || "Playback error");
-        this.ui.setStatus("Error");
         this.syncProgress({ event: "error", error: error?.message || "unknown" });
     }
 
     onQualityOptions(options, selectedId) {
         this.ui.setQualityOptions(options, selectedId);
-        const selected = options.find((option) => option.id === selectedId);
-        this.ui.setQualityStatus(`Quality: ${selected?.label || "Auto"}`);
     }
 
     onAudioTracks(tracks, selectedId) {
         this.ui.setAudioOptions(tracks, selectedId);
-        const selected = tracks.find((track) => track.id === selectedId) || tracks[0];
-        this.ui.setAudioStatus(`Audio: ${selected?.label || "Default"}`);
     }
 
     handleTapToggle(event) {
+        if (this.locked) return;
+        this.ui.revealControls();
         const rect = this.ui.video.getBoundingClientRect();
         const ratioX = (event.clientX - rect.left) / rect.width;
         const side = ratioX < 0.35 ? "left" : ratioX > 0.65 ? "right" : "center";
 
-        const now = Date.now();
-        if (this.lastTap.side === side && now - this.lastTap.ts < 280 && side !== "center") {
-            this.seekRelative(side === "left" ? -this.getShortSeek() : this.getShortSeek());
-            this.ui.showSeekToast(side === "left" ? `-${this.getShortSeek()}s` : `+${this.getShortSeek()}s`);
-            this.lastTap = { side: "", ts: 0 };
-            return;
+        if (event.type === "touch") {
+            const now = Date.now();
+            if (this.lastTap.side === side && now - this.lastTap.ts < 280 && side !== "center") {
+                this.seekRelative(side === "left" ? -this.getShortSeek() : this.getShortSeek());
+                this.ui.showSeekToast(side === "left" ? `-${this.getShortSeek()}s` : `+${this.getShortSeek()}s`);
+                this.lastTap = { side: "", ts: 0 };
+                return;
+            }
+            this.lastTap = { side, ts: now };
         }
 
-        this.lastTap = { side, ts: now };
         if (side === "center") {
             this.togglePlayback();
         }
     }
 
     handleDoubleTapSeek(event) {
+        if (this.locked) return;
         const rect = this.ui.video.getBoundingClientRect();
         const ratioX = (event.clientX - rect.left) / rect.width;
         if (ratioX < 0.5) {
@@ -372,48 +343,24 @@ class AnimeStreamingPlayerApp {
     }
 
     seekPercent(percent) {
+        if (this.locked) return;
         if (!Number.isFinite(this.ui.video.duration) || this.ui.video.duration <= 0) return;
         this.ui.video.currentTime = (percent / 100) * this.ui.video.duration;
     }
 
-    handlePreviewHover(ratio, leftPx) {
-        const duration = Number.isFinite(this.ui.video.duration) ? this.ui.video.duration : 0;
-        const previewTime = duration * ratio;
-        const thumbs = this.currentEpisode?.config?.timeline_thumbnails || [];
-        let thumbnail = "";
-        if (thumbs.length) {
-            const chosen = thumbs.reduce((best, current) => {
-                if (current.time <= previewTime && current.time > (best?.time ?? -1)) return current;
-                return best;
-            }, null);
-            thumbnail = chosen?.src || "";
-        }
-
-        this.ui.showPreview({
-            left: leftPx,
-            timeLabel: this.ui.formatTime(previewTime),
-            thumbnail
-        });
-    }
-
     setVolume(volume) {
+        if (this.locked) return;
         this.ui.video.volume = Math.max(0, Math.min(1, volume));
         this.ui.video.muted = this.ui.video.volume === 0;
     }
 
     setSpeed(speed) {
+        if (this.locked) return;
         this.ui.video.playbackRate = Math.max(0.25, Math.min(3, speed));
     }
 
-    toggleMute() {
-        this.ui.video.muted = !this.ui.video.muted;
-        if (!this.ui.video.muted && this.ui.video.volume === 0) {
-            this.ui.video.volume = 1;
-        }
-        this.ui.setMuteState(this.ui.video.muted || this.ui.video.volume === 0);
-    }
-
     async togglePlayback() {
+        if (this.locked) return;
         if (!this.ui.video.src) return;
         if (this.ui.video.paused) {
             try {
@@ -427,36 +374,13 @@ class AnimeStreamingPlayerApp {
     }
 
     seekRelative(seconds) {
+        if (this.locked) return;
         if (!Number.isFinite(this.ui.video.duration)) return;
         const nextTime = Math.min(
             this.ui.video.duration,
             Math.max(0, this.ui.video.currentTime + seconds)
         );
         this.ui.video.currentTime = nextTime;
-    }
-
-    skipToIntroEnd() {
-        const introEnd = Number(this.currentEpisode?.config?.intro_end || 0);
-        if (introEnd > 0) {
-            this.ui.video.currentTime = introEnd;
-            this.ui.showSeekToast("Skipped Opening");
-        }
-    }
-
-    skipToOutroEnd() {
-        const outroEnd = Number(this.currentEpisode?.config?.outro_end || 0);
-        if (outroEnd > 0) {
-            this.ui.video.currentTime = outroEnd;
-            this.ui.showSeekToast("Skipped Ending");
-        }
-    }
-
-    updateSkipButtons(currentTime) {
-        const cfg = this.currentEpisode?.config || {};
-        const introVisible = cfg.intro_end > cfg.intro_start && currentTime >= cfg.intro_start && currentTime < cfg.intro_end;
-        const outroVisible = cfg.outro_end > cfg.outro_start && currentTime >= cfg.outro_start && currentTime < cfg.outro_end;
-        this.ui.showSkipIntro(introVisible);
-        this.ui.showSkipOutro(outroVisible);
     }
 
     async switchServer(index) {
@@ -467,9 +391,7 @@ class AnimeStreamingPlayerApp {
         const autoplay = !this.ui.video.paused;
         const switched = await this.playerCore.switchServer(normalized, { startTime: currentTime, autoplay });
         if (switched) {
-            const server = this.currentEpisode.config.video_sources[normalized];
             this.ui.setServerOptions(this.currentEpisode.config.video_sources, String(normalized));
-            this.ui.setServerChip(server.label || `Server ${normalized + 1}`);
         }
     }
 
@@ -477,52 +399,14 @@ class AnimeStreamingPlayerApp {
         this.loadEpisode(Math.max(0, this.currentEpisodeIndex - 1), true);
     }
 
-    nextEpisode(force = false) {
+    nextEpisode() {
         const nextIndex = this.currentEpisodeIndex + 1;
         if (nextIndex >= this.config.episodes.length) return;
-        if (!force && this.autoNextTimer) return;
-        this.clearAutoNext();
         this.loadEpisode(nextIndex, true);
     }
 
-    startAutoNextCountdown() {
-        const nextIndex = this.currentEpisodeIndex + 1;
-        if (nextIndex >= this.config.episodes.length) return;
-        this.clearAutoNext();
-        this.autoNextRemaining = Number(this.config.auto_next_seconds || 8);
-        const nextTitle = this.config.episodes[nextIndex]?.metadata?.title || `Episode ${nextIndex + 1}`;
-        this.ui.showNextCountdown(this.autoNextRemaining, nextTitle);
-        this.autoNextTimer = setInterval(() => {
-            this.autoNextRemaining -= 1;
-            this.ui.showNextCountdown(this.autoNextRemaining, nextTitle);
-            if (this.autoNextRemaining <= 0) {
-                this.nextEpisode(true);
-            }
-        }, 1000);
-    }
-
-    clearAutoNext() {
-        if (this.autoNextTimer) {
-            clearInterval(this.autoNextTimer);
-            this.autoNextTimer = null;
-        }
-        this.ui?.hideNextCountdown();
-    }
-
-    async togglePip() {
-        if (!document.pictureInPictureEnabled) return;
-        try {
-            if (document.pictureInPictureElement) {
-                await document.exitPictureInPicture();
-            } else {
-                await this.ui.video.requestPictureInPicture();
-            }
-        } catch (error) {
-            console.debug("PiP unavailable:", error);
-        }
-    }
-
     async toggleFullscreen() {
+        if (this.locked) return;
         const target = this.ui.videoWrap;
         if (!document.fullscreenElement) {
             await target.requestFullscreen();
@@ -531,21 +415,76 @@ class AnimeStreamingPlayerApp {
         }
     }
 
-    captureScreenshot() {
-        if (this.ui.video.readyState < 2) return;
-        const canvas = document.createElement("canvas");
-        canvas.width = this.ui.video.videoWidth;
-        canvas.height = this.ui.video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(this.ui.video, 0, 0, canvas.width, canvas.height);
-        const link = document.createElement("a");
-        const episodeName = this.currentEpisode?.id || "episode";
-        link.href = canvas.toDataURL("image/png");
-        link.download = `${episodeName.replace(/[^\w.\-]+/g, "_")}-${Math.floor(this.ui.video.currentTime)}s.png`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
+    toggleOptionsMenu() {
+        if (this.locked) return;
+        this.ui.toggleOptionsMenu();
+    }
+
+    toggleLock() {
+        this.locked = !this.locked;
+        this.ui.setLocked(this.locked);
+    }
+
+    async deleteEpisode(index) {
+        const episode = this.config.episodes[index];
+        if (!episode) return;
+        const confirmed = window.confirm(`Delete episode?\n\n${episode.filename}`);
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch(episode.delete_url || `/api/library/anime/${encodeURIComponent(this.animeName)}/file/${encodeURIComponent(episode.filename)}`, {
+                method: "DELETE"
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            await this.reloadConfigAndPreserve(Math.max(0, this.currentEpisodeIndex - (index <= this.currentEpisodeIndex ? 1 : 0)));
+        } catch (error) {
+            this.ui.setError(`Delete failed: ${error.message}`);
+        }
+    }
+
+    async deleteSelectedEpisodes() {
+        const indexes = this.ui.getSelectedEpisodeIndexes();
+        if (!indexes.length) return;
+        const filenames = indexes.map((index) => this.config.episodes[index]?.filename).filter(Boolean);
+        if (!filenames.length) return;
+
+        const confirmed = window.confirm(`Delete ${filenames.length} selected episode(s)?`);
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch(`/api/library/anime/${encodeURIComponent(this.animeName)}/files`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filenames })
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            await this.reloadConfigAndPreserve(Math.max(0, this.currentEpisodeIndex));
+        } catch (error) {
+            this.ui.setError(`Bulk delete failed: ${error.message}`);
+        }
+    }
+
+    async deleteSeries() {
+        const confirmed = window.confirm(`Delete full series?\n\n${this.animeName}`);
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`/api/library/anime/${encodeURIComponent(this.animeName)}`, { method: "DELETE" });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            window.location.href = "/library";
+        } catch (error) {
+            this.ui.setError(`Series delete failed: ${error.message}`);
+        }
+    }
+
+    async reloadConfigAndPreserve(targetIndex) {
+        const refreshed = await this.loadConfig();
+        if (!refreshed?.episodes?.length) {
+            window.location.href = "/library";
+            return;
+        }
+        this.config = refreshed;
+        const safeIndex = Math.max(0, Math.min(targetIndex, this.config.episodes.length - 1));
+        await this.loadEpisode(safeIndex, false);
     }
 
     getResumeKey(episodeId) {
@@ -592,9 +531,6 @@ class AnimeStreamingPlayerApp {
         return Number(this.config.seek_short_seconds || 10);
     }
 
-    getLongSeek() {
-        return Number(this.config.seek_long_seconds || 30);
-    }
 }
 
 function bootPlayer() {

@@ -2,7 +2,7 @@
 Library API Routes
 Handles listing and serving downloaded anime files
 """
-from flask import Blueprint, jsonify, send_file, current_app
+from flask import Blueprint, jsonify, send_file, current_app, request
 from datetime import datetime
 from pathlib import Path
 import mimetypes
@@ -35,8 +35,8 @@ def _episode_title_from_filename(filename):
 
 
 def _build_subtitle_entries(anime_name, anime_path, episode_filename):
-    anime_segment = quote(anime_name, safe='')
     """Build VTT subtitle list for an episode."""
+    anime_segment = quote(anime_name, safe='')
     episode_stem = Path(episode_filename).stem.lower()
     subtitles = []
     seen = set()
@@ -222,6 +222,67 @@ def get_anime_files(anime_name):
         return jsonify({"error": str(e)}), 500
 
 
+@library_bp.route('/anime/<path:anime_name>/files', methods=['DELETE'])
+@login_required
+def delete_anime_files_bulk(anime_name):
+    """Delete multiple episodes/files from a series."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        filenames = payload.get('filenames') or []
+        if not isinstance(filenames, list) or not filenames:
+            return jsonify({"error": "filenames list is required"}), 400
+
+        deleted = []
+        missing = []
+        for filename in filenames:
+            if not isinstance(filename, str) or not filename.strip():
+                continue
+            file_path = _resolve_anime_file_path(anime_name, filename)
+            if not file_path:
+                missing.append(filename)
+                continue
+            file_path.unlink()
+            deleted.append(filename)
+
+        return jsonify({
+            "anime_name": anime_name,
+            "deleted": deleted,
+            "missing": missing
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@library_bp.route('/anime/bulk', methods=['DELETE'])
+@login_required
+def delete_anime_series_bulk():
+    """Delete multiple anime series folders."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        anime_names = payload.get('anime_names') or []
+        if not isinstance(anime_names, list) or not anime_names:
+            return jsonify({"error": "anime_names list is required"}), 400
+
+        deleted = []
+        missing = []
+        for anime_name in anime_names:
+            if not isinstance(anime_name, str) or not anime_name.strip():
+                continue
+            anime_path = _resolve_anime_dir(anime_name)
+            if not anime_path:
+                missing.append(anime_name)
+                continue
+            shutil.rmtree(anime_path)
+            deleted.append(anime_name)
+
+        return jsonify({
+            "deleted": deleted,
+            "missing": missing
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @library_bp.route('/player-config/<path:anime_name>', methods=['GET'])
 @login_required
 def get_player_config(anime_name):
@@ -270,6 +331,8 @@ def get_player_config(anime_name):
             episodes.append({
                 "id": file_path.name,
                 "filename": file_path.name,
+                "download_url": f"/api/library/download/{anime_segment}/{file_segment}",
+                "delete_url": f"/api/library/anime/{anime_segment}/file/{file_segment}",
                 "episode_number": episode_number,
                 "thumbnail": "/static/player/episode-placeholder.svg",
                 "metadata": {
