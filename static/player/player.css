@@ -324,6 +324,40 @@
     animation: ap-pop 0.45s ease-out;
 }
 
+.ap-play-pulse {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.75);
+    width: 78px;
+    height: 78px;
+    border-radius: 50%;
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid rgba(125, 211, 252, 0.5);
+    color: #e2e8f0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.ap-play-pulse svg {
+    width: 30px;
+    height: 30px;
+}
+
+.ap-play-pulse.ap-visible {
+    animation: ap-play-pulse-pop 0.35s ease-out;
+}
+
+@keyframes ap-play-pulse-pop {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(0.65); }
+    25% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.06); }
+}
+
 @keyframes ap-pop {
     0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
     25% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -422,6 +456,13 @@
     line-height: 1.35;
 }
 
+.ap-episode-runtime {
+    margin-top: 5px;
+    color: #bfdbfe;
+    font-size: 0.73rem;
+    font-weight: 600;
+}
+
 .ap-status-row {
     margin-top: 9px;
     color: #94a3b8;
@@ -511,6 +552,21 @@
     font-size: 0.78rem;
     font-weight: 700;
     z-index: 6;
+}
+
+.ap-screen-locked .ap-bottom-controls,
+.ap-screen-locked .ap-options-panel,
+.ap-screen-locked .ap-sidebar {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.ap-screen-locked .ap-top-actions {
+    pointer-events: none;
+}
+
+.ap-screen-locked .ap-lock-btn {
+    pointer-events: auto;
 }
 
 .ap-top-actions {

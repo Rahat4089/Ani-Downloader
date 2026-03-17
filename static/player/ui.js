@@ -12,7 +12,9 @@ const Icons = {
     fullscreen: icon("M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"),
     dots: icon("M6 12h.01M12 12h.01M18 12h.01"),
     lock: icon("M7 11V8a5 5 0 0110 0v3M6 11h12v10H6z"),
-    unlock: icon("M7 11V8a5 5 0 019.4-2.3")
+    unlock: icon("M7 11V8a5 5 0 019.4-2.3"),
+    playPulse: icon("M8 5l11 7-11 7V5z"),
+    pausePulse: icon("M8 5h3v14H8zM13 5h3v14h-3z")
 };
 
 export class PlayerUI {
@@ -45,6 +47,7 @@ export class PlayerUI {
                         </div>
 
                         <div class="ap-seek-toast">+10s</div>
+                        <div class="ap-play-pulse"></div>
 
                         <div class="ap-top-actions">
                             <button class="ap-btn ap-lock-btn" data-action="toggle-lock" title="Lock">${Icons.lock}</button>
@@ -128,6 +131,7 @@ export class PlayerUI {
         this.errorOverlay = this.root.querySelector(".ap-error");
         this.errorMessage = this.root.querySelector(".ap-error-msg");
         this.seekToast = this.root.querySelector(".ap-seek-toast");
+        this.playPulse = this.root.querySelector(".ap-play-pulse");
         this.lockButton = this.root.querySelector(".ap-lock-btn");
         this.moreButton = this.root.querySelector(".ap-more-btn");
         this.optionsPanel = this.root.querySelector(".ap-options-panel");
@@ -186,11 +190,23 @@ export class PlayerUI {
     hideControlsSoon(timeout = 2200) {
         clearTimeout(this.hideTimer);
         this.hideTimer = setTimeout(() => {
-            if (this.locked) return;
+            if (this.locked || this.isInteractingWithControls()) {
+                this.hideControlsSoon(1200);
+                return;
+            }
             this.bottomControls.classList.add("ap-hidden");
             this.moreButton.classList.add("ap-hidden");
             this.optionsPanel.classList.add("ap-hidden");
-        }, timeout);
+        }, Math.max(3000, timeout));
+    }
+
+    isInteractingWithControls() {
+        const active = document.activeElement;
+        if (!active) return false;
+        if (this.optionsPanel.contains(active)) return true;
+        if (this.bottomControls.contains(active)) return true;
+        if (!this.optionsPanel.classList.contains("ap-hidden")) return true;
+        return false;
     }
 
     setLocked(locked) {
@@ -201,9 +217,11 @@ export class PlayerUI {
             this.optionsPanel.classList.add("ap-hidden");
             this.lockButton.innerHTML = Icons.unlock;
             this.videoWrap.classList.add("ap-locked");
+            this.root.classList.add("ap-screen-locked");
         } else {
             this.lockButton.innerHTML = Icons.lock;
             this.videoWrap.classList.remove("ap-locked");
+            this.root.classList.remove("ap-screen-locked");
             this.revealControls();
         }
     }
@@ -227,6 +245,13 @@ export class PlayerUI {
 
     setPlayState(playing) {
         this.playButton.innerHTML = playing ? Icons.pause : Icons.play;
+    }
+
+    showPlayPulse(playing) {
+        this.playPulse.innerHTML = playing ? Icons.playPulse : Icons.pausePulse;
+        this.playPulse.classList.remove("ap-visible");
+        void this.playPulse.offsetWidth;
+        this.playPulse.classList.add("ap-visible");
     }
 
     setBuffering(show) {
@@ -277,6 +302,7 @@ export class PlayerUI {
                     <button class="ap-episode-main" data-episode-play="${index}">
                         <div class="ap-episode-name">EP ${episode.episode_number}: ${episode.metadata?.title || episode.filename}</div>
                         <div class="ap-episode-desc">${episode.metadata?.synopsis || ""}</div>
+                        <div class="ap-episode-runtime">Runtime: ${episode.runtime_label || "Unknown"}</div>
                     </button>
                     <div class="ap-episode-item-actions">
                         <a class="ap-btn ap-mini-btn" href="${episode.download_url || "#"}" ${episode.download_url ? "" : "aria-disabled='true'"} download>Download</a>

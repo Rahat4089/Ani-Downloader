@@ -8,6 +8,7 @@ from pathlib import Path
 import mimetypes
 import os
 import shutil
+import subprocess
 from urllib.parse import quote
 from app.utils import login_required
 
@@ -32,6 +33,78 @@ def _episode_title_from_filename(filename):
     stem = Path(filename).stem
     normalized = stem.replace('.', ' ').replace('_', ' ').replace('-', ' ').strip()
     return ' '.join(word.capitalize() for word in normalized.split())
+
+
+def _format_runtime(seconds):
+    """Format runtime seconds to HH:MM:SS or MM:SS."""
+    if seconds is None or not isinstance(seconds, (int, float)) or seconds < 0:
+        return "Unknown"
+
+    total = int(seconds)
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+    secs = total % 60
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _get_media_duration_seconds(file_path):
+    """Read media duration using ffprobe when available."""
+    try:
+        result = subprocess.run(
+            [
+                'ffprobe',
+                '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(file_path)
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False
+        )
+        if result.returncode != 0:
+            return None
+        value = float(result.stdout.strip())
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
+def _ensure_episode_thumbnail(anime_path, file_path, duration_seconds):
+    """Generate and cache a thumbnail image for a video episode."""
+    thumbnail_dir = anime_path / '.thumbnails'
+    thumbnail_dir.mkdir(exist_ok=True)
+    thumbnail_path = thumbnail_dir / f"{file_path.stem}.jpg"
+
+    # Rebuild thumbnail if source was updated.
+    if thumbnail_path.exists() and thumbnail_path.stat().st_mtime >= file_path.stat().st_mtime:
+        return thumbnail_path
+
+    seek_second = 2
+    if duration_seconds and duration_seconds > 20:
+        seek_second = int(min(45, max(2, duration_seconds * 0.18)))
+
+    result = subprocess.run(
+        [
+            'ffmpeg',
+            '-y',
+            '-ss', str(seek_second),
+            '-i', str(file_path),
+            '-frames:v', '1',
+            '-vf', 'scale=480:-1',
+            str(thumbnail_path)
+        ],
+        capture_output=True,
+        text=True,
+        timeout=12,
+        check=False
+    )
+    if result.returncode != 0 or not thumbnail_path.exists():
+        return None
+    return thumbnail_path
 
 
 def _build_subtitle_entries(anime_name, anime_path, episode_filename):
@@ -148,6 +221,30 @@ def serve_anime_asset(anime_name, filename):
             mimetype=mimetype or 'application/octet-stream',
             conditional=True
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@library_bp.route('/thumbnail/<path:anime_name>/<path:filename>', methods=['GET'])
+@login_required
+def episode_thumbnail(anime_name, filename):
+    """Return a generated thumbnail image for a video episode."""
+    try:
+        anime_path = _resolve_anime_dir(anime_name)
+        file_path = _resolve_anime_file_path(anime_name, filename)
+        if not anime_path or not file_path:
+            return jsonify({"error": "File not found"}), 404
+        if not _is_video_file(file_path.name):
+            return jsonify({"error": "Unsupported media type"}), 400
+
+        duration = _get_media_duration_seconds(file_path)
+        thumbnail_path = _ensure_episode_thumbnail(anime_path, file_path, duration)
+        if not thumbnail_path:
+            return send_file(
+                Path(current_app.static_folder) / 'player' / 'episode-placeholder.svg',
+                mimetype='image/svg+xml'
+            )
+        return send_file(thumbnail_path, mimetype='image/jpeg', conditional=True)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -308,6 +405,8 @@ def get_player_config(anime_name):
             primary_url = f"/api/library/asset/{anime_segment}/{file_segment}"
             backup_url = f"/api/library/stream/{anime_segment}/{file_segment}"
             subtitles = _build_subtitle_entries(anime_name, anime_path, file_path.name)
+            runtime_seconds = _get_media_duration_seconds(file_path)
+            thumbnail_url = f"/api/library/thumbnail/{anime_segment}/{file_segment}?v={int(file_path.stat().st_mtime)}"
 
             video_sources = [
                 {
@@ -334,7 +433,9 @@ def get_player_config(anime_name):
                 "download_url": f"/api/library/download/{anime_segment}/{file_segment}",
                 "delete_url": f"/api/library/anime/{anime_segment}/file/{file_segment}",
                 "episode_number": episode_number,
-                "thumbnail": "/static/player/episode-placeholder.svg",
+                "thumbnail": thumbnail_url,
+                "runtime_seconds": runtime_seconds,
+                "runtime_label": _format_runtime(runtime_seconds),
                 "metadata": {
                     "title": _episode_title_from_filename(file_path.name),
                     "synopsis": f"Episode {episode_number} from {anime_name}. Metadata API hook ready."

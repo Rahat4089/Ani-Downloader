@@ -28,7 +28,12 @@ class AnimeStreamingPlayerApp {
             return;
         }
 
-        this.config = await this.loadConfig();
+        try {
+            this.config = await this.loadConfig();
+        } catch (error) {
+            this.root.innerHTML = "<div class='error'>Failed to load anime stream configuration.</div>";
+            return;
+        }
         if (!this.config?.episodes?.length) {
             this.root.innerHTML = "<div class='error'>No episodes found for this anime.</div>";
             return;
@@ -65,6 +70,15 @@ class AnimeStreamingPlayerApp {
         this.attachVideoEvents();
         this.attachGestures();
         this.attachKeyboardShortcuts();
+        document.addEventListener("fullscreenchange", () => {
+            if (!document.fullscreenElement && screen.orientation?.unlock) {
+                try {
+                    screen.orientation.unlock();
+                } catch (error) {
+                    console.debug("Orientation unlock unavailable:", error);
+                }
+            }
+        });
 
         const startIndex = this.getInitialEpisodeIndex();
         this.loadEpisode(startIndex, false);
@@ -80,17 +94,10 @@ class AnimeStreamingPlayerApp {
         }
 
         const apiUrl = `/api/library/player-config/${encodeURIComponent(this.animeName)}`;
-        try {
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const payload = await response.json();
-            return this.normalizeConfig(payload);
-        } catch (error) {
-            console.warn("Player config API failed, loading demo config:", error);
-            const fallback = await fetch("/static/player/demo_config.json");
-            const payload = await fallback.json();
-            return this.normalizeConfig(payload);
-        }
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        return this.normalizeConfig(payload);
     }
 
     normalizeConfig(payload) {
@@ -365,11 +372,13 @@ class AnimeStreamingPlayerApp {
         if (this.ui.video.paused) {
             try {
                 await this.ui.video.play();
+                this.ui.showPlayPulse(true);
             } catch (error) {
                 console.debug("Autoplay blocked:", error);
             }
         } else {
             this.ui.video.pause();
+            this.ui.showPlayPulse(false);
         }
     }
 
@@ -410,8 +419,22 @@ class AnimeStreamingPlayerApp {
         const target = this.ui.videoWrap;
         if (!document.fullscreenElement) {
             await target.requestFullscreen();
+            if (screen.orientation?.lock) {
+                try {
+                    await screen.orientation.lock("landscape");
+                } catch (error) {
+                    console.debug("Landscape lock unavailable:", error);
+                }
+            }
         } else {
             await document.exitFullscreen();
+            if (screen.orientation?.unlock) {
+                try {
+                    screen.orientation.unlock();
+                } catch (error) {
+                    console.debug("Orientation unlock unavailable:", error);
+                }
+            }
         }
     }
 
