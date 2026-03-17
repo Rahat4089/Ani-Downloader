@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import mimetypes
 import os
+import shutil
 from app.utils import login_required
 
 library_bp = Blueprint('library', __name__, url_prefix='/api/library')
@@ -36,6 +37,20 @@ def _resolve_anime_file_path(anime_name, filename):
         return None
 
     return file_path
+
+
+def _resolve_anime_dir(anime_name):
+    """Safely resolve anime directory within downloads folder."""
+    download_folder = Path(current_app.config['DOWNLOAD_FOLDER']).resolve()
+    anime_path = (download_folder / anime_name).resolve()
+
+    if not anime_path.exists() or not anime_path.is_dir():
+        return None
+
+    if not anime_path.is_relative_to(download_folder):
+        return None
+
+    return anime_path
 
 
 def _send_anime_file(anime_name, filename, as_attachment):
@@ -123,6 +138,41 @@ def get_anime_files(anime_name):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@library_bp.route('/anime/<path:anime_name>', methods=['DELETE'])
+@login_required
+def delete_anime_series(anime_name):
+    """Delete an entire anime series folder."""
+    try:
+        anime_path = _resolve_anime_dir(anime_name)
+        if not anime_path:
+            return jsonify({"error": "Anime not found"}), 404
+
+        removed_files = sum(1 for item in anime_path.rglob('*') if item.is_file())
+        shutil.rmtree(anime_path)
+        return jsonify({
+            "message": f"Deleted series '{anime_name}'",
+            "deleted_files": removed_files
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@library_bp.route('/anime/<path:anime_name>/file/<path:filename>', methods=['DELETE'])
+@login_required
+def delete_anime_file(anime_name, filename):
+    """Delete a single episode/file from a series."""
+    try:
+        file_path = _resolve_anime_file_path(anime_name, filename)
+        if not file_path:
+            return jsonify({"error": "File not found"}), 404
+
+        file_path.unlink()
+        return jsonify({
+            "message": f"Deleted '{filename}'",
+            "anime_name": anime_name
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @library_bp.route('/stream/<path:anime_name>/<path:filename>', methods=['GET'])
 @login_required
 def stream_file(anime_name, filename):
@@ -135,6 +185,84 @@ def stream_file(anime_name, filename):
             return jsonify({"error": "Unsupported media type"}), 400
 
         return _send_anime_file(anime_name, filename, as_attachment=False)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@library_bp.route('/server-stats', methods=['GET'])
+@login_required
+def server_stats():
+    """Return library + server resource stats."""
+    try:
+        download_folder = Path(current_app.config['DOWNLOAD_FOLDER']).resolve()
+        series_count = 0
+        episode_count = 0
+        total_library_bytes = 0
+        video_files_count = 0
+
+        if download_folder.exists():
+            for entry in download_folder.iterdir():
+                if entry.is_dir():
+                    series_count += 1
+                    for item in entry.iterdir():
+                        if item.is_file():
+                            episode_count += 1
+                            total_library_bytes += item.stat().st_size
+                            if _is_video_file(item.name):
+                                video_files_count += 1
+
+        disk_total, disk_used, disk_free = shutil.disk_usage(download_folder)
+
+        mem_total = mem_free = mem_used = None
+        try:
+            meminfo = {}
+            with open('/proc/meminfo', 'r', encoding='utf-8') as mem_file:
+                for line in mem_file:
+                    key, value = line.split(':', 1)
+                    meminfo[key] = int(value.strip().split()[0]) * 1024
+            mem_total = meminfo.get('MemTotal')
+            mem_free = meminfo.get('MemAvailable')
+            if mem_total is not None and mem_free is not None:
+                mem_used = mem_total - mem_free
+        except Exception:
+            pass
+
+        uptime_seconds = None
+        try:
+            with open('/proc/uptime', 'r', encoding='utf-8') as uptime_file:
+                uptime_seconds = int(float(uptime_file.read().split()[0]))
+        except Exception:
+            pass
+
+        load_avg = None
+        try:
+            one, five, fifteen = os.getloadavg()
+            load_avg = {
+                "1m": round(one, 2),
+                "5m": round(five, 2),
+                "15m": round(fifteen, 2)
+            }
+        except Exception:
+            pass
+
+        return jsonify({
+            "series_count": series_count,
+            "episode_count": episode_count,
+            "video_files_count": video_files_count,
+            "library_size_bytes": total_library_bytes,
+            "storage": {
+                "total_bytes": disk_total,
+                "used_bytes": disk_used,
+                "free_bytes": disk_free
+            },
+            "memory": {
+                "total_bytes": mem_total,
+                "used_bytes": mem_used,
+                "free_bytes": mem_free
+            },
+            "uptime_seconds": uptime_seconds,
+            "cpu_count": os.cpu_count(),
+            "load_avg": load_avg
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

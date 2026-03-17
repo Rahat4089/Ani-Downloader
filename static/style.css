@@ -365,6 +365,11 @@ label {
     border: 1px solid var(--border-color);
 }
 
+.video-frame-enhanced {
+    position: relative;
+    min-height: 320px;
+}
+
 .video-player {
     width: 100%;
     max-height: 70vh;
@@ -372,11 +377,42 @@ label {
     background: #000;
 }
 
+.video-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+}
+
+.overlay-top,
+.overlay-bottom {
+    padding: 12px;
+    pointer-events: auto;
+}
+
+.overlay-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0));
+}
+
+.overlay-bottom {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0));
+}
+
 .player-progress-row {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-top: 14px;
+}
+
+.player-progress-row-overlay {
+    margin-top: 0;
 }
 
 .time-label {
@@ -398,6 +434,10 @@ label {
     flex-wrap: wrap;
 }
 
+.player-controls-row-overlay {
+    margin-top: 10px;
+}
+
 .player-controls-group {
     display: flex;
     gap: 8px;
@@ -413,9 +453,9 @@ label {
 .btn-player-primary {
     padding: 10px 14px;
     border-radius: 8px;
-    border: 1px solid var(--border-color);
-    background: var(--surface-light);
-    color: var(--text-color);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(15, 20, 25, 0.72);
+    color: #fff;
     cursor: pointer;
     font-weight: 600;
 }
@@ -443,7 +483,7 @@ label {
 .btn-download-current {
     background: rgba(16, 185, 129, 0.16);
     border: 1px solid rgba(16, 185, 129, 0.4);
-    color: var(--text-color);
+    color: #fff;
     padding: 10px 14px;
     border-radius: 8px;
     text-decoration: none;
@@ -455,15 +495,31 @@ label {
 }
 
 .now-playing {
-    margin-top: 12px;
-    color: var(--text-color);
+    color: #fff;
     font-weight: 600;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
 .player-help {
     margin-top: 6px;
     font-size: 0.85rem;
     color: var(--text-dim);
+}
+
+.danger-zone {
+    margin: 10px 0 20px 0;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-danger-action {
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+}
+
+.btn-danger-action:hover {
+    background: rgba(239, 68, 68, 0.24);
 }
 
 /* Episode List */
@@ -561,6 +617,51 @@ label {
     opacity: 0.55;
     cursor: not-allowed;
     border-color: var(--border-color);
+}
+
+.btn-delete-episode {
+    background: rgba(239, 68, 68, 0.14);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fecaca;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-delete-episode:hover {
+    background: rgba(239, 68, 68, 0.22);
+}
+
+/* Server stats */
+.server-stats-wrap {
+    margin: 20px 0 28px;
+}
+
+.server-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+}
+
+.server-metric {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.server-metric-label {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.server-metric-value {
+    color: var(--text-color);
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-top: 4px;
 }
 
 /* Back Link */
@@ -826,6 +927,15 @@ label {
 
     .episode-actions {
         width: 100%;
+        justify-content: center;
+    }
+
+    .overlay-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .danger-zone {
         justify-content: center;
     }
 
