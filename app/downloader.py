@@ -19,12 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 class AnimeDownloader:
     def __init__(self, config: Dict[str, Any] = None):
-        env_base = os.environ.get("ANIKAI_BASE_URL", "https://anikai.to").rstrip("/")
-        self.BASE_URL = env_base
-        self.BASE_FALLBACKS = []
-        for candidate in [env_base, "https://anikai.to", "https://animekai.to"]:
-            if candidate and candidate not in self.BASE_FALLBACKS:
-                self.BASE_FALLBACKS.append(candidate)
+        self.BASE_URL = "https://anikai.to"
         self.scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "desktop": True}
         )
@@ -50,48 +45,6 @@ class AnimeDownloader:
         
         self.progress_callback = None
         self.log_callback = None
-
-    def _set_base_url_from_input(self, url: str):
-        """Adopt base URL from input anime page when available."""
-        try:
-            parsed = urlparse(url)
-            if parsed.scheme and parsed.netloc:
-                host = parsed.netloc.lower()
-                if "anikai" in host or "animekai" in host:
-                    candidate = f"{parsed.scheme}://{parsed.netloc}"
-                    self.BASE_URL = candidate
-                    if candidate not in self.BASE_FALLBACKS:
-                        self.BASE_FALLBACKS.insert(0, candidate)
-        except Exception:
-            pass
-
-    def _iter_base_urls(self):
-        """Yield preferred base URL first, then fallbacks."""
-        yielded = set()
-        for base in [self.BASE_URL, *self.BASE_FALLBACKS]:
-            if base and base not in yielded:
-                yielded.add(base)
-                yield base
-
-    def _get_ajax_json(self, path: str, timeout: int = 30) -> Optional[Dict[str, Any]]:
-        """Request ajax JSON with domain fallback."""
-        last_error = None
-        for base in self._iter_base_urls():
-            try:
-                url = f"{base}{path}"
-                headers = dict(self.HEADERS)
-                headers["Referer"] = base
-                r = self.scraper.get(url, headers=headers, timeout=timeout)
-                r.raise_for_status()
-                data = r.json()
-                self.BASE_URL = base
-                return data
-            except Exception as e:
-                last_error = e
-                continue
-        if last_error:
-            self.log("ERROR", f"Ajax request failed for {path}: {last_error}")
-        return None
 
     def set_progress_callback(self, callback):
         """Set callback for progress updates"""
@@ -152,31 +105,10 @@ class AnimeDownloader:
 
     def get_anime_details(self, url: str) -> Tuple[Optional[str], str]:
         """Get anime ID and title from URL"""
-        self._set_base_url_from_input(url)
         try:
-            soup = None
-            last_error = None
-            candidate_urls = [url]
-            if "anikai.to" in url:
-                candidate_urls.append(url.replace("anikai.to", "animekai.to"))
-            elif "animekai.to" in url:
-                candidate_urls.append(url.replace("animekai.to", "anikai.to"))
-
-            for candidate in candidate_urls:
-                try:
-                    self._set_base_url_from_input(candidate)
-                    headers = dict(self.HEADERS)
-                    headers["Referer"] = self.BASE_URL
-                    r = self.scraper.get(candidate, headers=headers, timeout=30)
-                    r.raise_for_status()
-                    soup = BeautifulSoup(r.text, "html.parser")
-                    break
-                except Exception as e:
-                    last_error = e
-                    continue
-
-            if soup is None:
-                raise last_error or Exception("Could not load anime page")
+            r = self.scraper.get(url, headers=self.HEADERS, timeout=30)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
 
             anime_div = soup.select_one("div[data-id]")
             anime_id = anime_div.get("data-id") if anime_div else None
@@ -226,9 +158,10 @@ class AnimeDownloader:
             enc = self.enc_kai(anime_id)
             if not enc:
                 return []
-            data = self._get_ajax_json(f"/ajax/episodes/list?ani_id={anime_id}&_={enc}", timeout=30)
-            if not data:
-                return []
+            url = f"{self.BASE_URL}/ajax/episodes/list?ani_id={anime_id}&_={enc}"
+            r = self.scraper.get(url, headers=self.HEADERS, timeout=30)
+            r.raise_for_status()
+            data = r.json()
             html = data.get("result", "")
             if not html:
                 return []
@@ -269,9 +202,10 @@ class AnimeDownloader:
             enc = self.enc_kai(token)
             if not enc:
                 return []
-            data = self._get_ajax_json(f"/ajax/links/list?token={token}&_={enc}", timeout=30)
-            if not data:
-                return []
+            url = f"{self.BASE_URL}/ajax/links/list?token={token}&_={enc}"
+            r = self.scraper.get(url, headers=self.HEADERS, timeout=30)
+            r.raise_for_status()
+            data = r.json()
             html = data.get("result", "")
             if not html:
                 return []
@@ -328,9 +262,10 @@ class AnimeDownloader:
             enc = self.enc_kai(server_id)
             if not enc:
                 return None
-            data = self._get_ajax_json(f"/ajax/links/view?id={server_id}&_={enc}", timeout=30)
-            if not data:
-                return None
+            url = f"{self.BASE_URL}/ajax/links/view?id={server_id}&_={enc}"
+            r = self.scraper.get(url, headers=self.HEADERS, timeout=30)
+            r.raise_for_status()
+            data = r.json()
             encoded_link = data.get("result", "")
             if not encoded_link:
                 return None
