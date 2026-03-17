@@ -405,7 +405,15 @@ def get_player_config(anime_name):
         ], key=lambda path: path.name.lower())
 
         if not video_files:
-            return jsonify({"error": "No playable files found"}), 404
+            return jsonify({
+                "anime_name": anime_name,
+                "ui_language": "en",
+                "seek_short_seconds": 10,
+                "seek_long_seconds": 30,
+                "auto_next_seconds": 8,
+                "episodes": [],
+                "message": "No episodes available"
+            })
 
         episodes = []
         anime_segment = quote(anime_name, safe='')

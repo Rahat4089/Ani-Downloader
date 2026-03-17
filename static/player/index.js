@@ -20,6 +20,8 @@ class AnimeStreamingPlayerApp {
         this.lastTap = { side: "", ts: 0 };
         this.resumeSaveSecond = -1;
         this.locked = false;
+        this.centerTapTimer = null;
+        this.lastTouchTapAt = 0;
     }
 
     async init() {
@@ -35,7 +37,7 @@ class AnimeStreamingPlayerApp {
             return;
         }
         if (!this.config?.episodes?.length) {
-            this.root.innerHTML = "<div class='error'>No episodes found for this anime.</div>";
+            this.root.innerHTML = "<div class='ap-empty-state'>No episodes available for this anime yet.</div>";
             return;
         }
 
@@ -95,7 +97,20 @@ class AnimeStreamingPlayerApp {
 
         const apiUrl = `/api/library/player-config/${encodeURIComponent(this.animeName)}`;
         const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                let payload = null;
+                try {
+                    payload = await response.json();
+                } catch (error) {
+                    payload = null;
+                }
+                if (payload?.error?.toLowerCase?.().includes("no playable files")) {
+                    return { anime_name: this.animeName, episodes: [] };
+                }
+            }
+            throw new Error(`HTTP ${response.status}`);
+        }
         const payload = await response.json();
         return this.normalizeConfig(payload);
     }
@@ -209,7 +224,10 @@ class AnimeStreamingPlayerApp {
         });
         video.addEventListener("volumechange", () => { this.ui.volume.value = String(video.volume); });
         video.addEventListener("click", (event) => this.handleTapToggle(event));
-        video.addEventListener("dblclick", (event) => this.handleDoubleTapSeek(event));
+        video.addEventListener("dblclick", (event) => {
+            event.preventDefault();
+            this.handleDoubleTapSeek(event);
+        });
     }
 
     attachGestures() {
@@ -235,9 +253,11 @@ class AnimeStreamingPlayerApp {
             this.touchStart = null;
 
             if (elapsed < 260 && absX < 20 && absY < 20) {
+                event.preventDefault();
+                this.lastTouchTapAt = Date.now();
                 this.handleTapToggle({ clientX: endX, clientY: endY, type: "touch" });
             }
-        }, { passive: true });
+        }, { passive: false });
     }
 
     attachKeyboardShortcuts() {
@@ -288,6 +308,7 @@ class AnimeStreamingPlayerApp {
         else if (action === "retry") this.playerCore.retry({ autoplay: true, startTime: this.ui.video.currentTime });
         else if (action === "switch-server") this.switchServer(this.playerCore.currentServerIndex + 1);
         else if (action === "toggle-options") this.toggleOptionsMenu();
+        else if (action === "scroll-episodes") this.ui.scrollToEpisodeList();
         else if (action === "toggle-lock") this.toggleLock();
         else if (action === "delete-selected-episodes") this.deleteSelectedEpisodes();
         else if (action === "delete-series") this.deleteSeries();
@@ -315,6 +336,7 @@ class AnimeStreamingPlayerApp {
 
     handleTapToggle(event) {
         if (this.locked) return;
+        if (event.type === "click" && Date.now() - this.lastTouchTapAt < 450) return;
         this.ui.revealControls();
         const rect = this.ui.video.getBoundingClientRect();
         const ratioX = (event.clientX - rect.left) / rect.width;
@@ -332,18 +354,22 @@ class AnimeStreamingPlayerApp {
         }
 
         if (side === "center") {
-            this.togglePlayback();
+            clearTimeout(this.centerTapTimer);
+            this.centerTapTimer = setTimeout(() => {
+                this.togglePlayback();
+            }, 230);
         }
     }
 
     handleDoubleTapSeek(event) {
         if (this.locked) return;
+        clearTimeout(this.centerTapTimer);
         const rect = this.ui.video.getBoundingClientRect();
         const ratioX = (event.clientX - rect.left) / rect.width;
-        if (ratioX < 0.5) {
+        if (ratioX < 0.4) {
             this.seekRelative(-this.getShortSeek());
             this.ui.showSeekToast(`-${this.getShortSeek()}s`);
-        } else {
+        } else if (ratioX > 0.6) {
             this.seekRelative(this.getShortSeek());
             this.ui.showSeekToast(`+${this.getShortSeek()}s`);
         }

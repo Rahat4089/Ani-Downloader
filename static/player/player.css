@@ -17,6 +17,20 @@
     min-height: 420px;
 }
 
+.ap-empty-state {
+    min-height: 280px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.7);
+    color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    font-weight: 600;
+}
+
 .ap-hidden {
     display: none !important;
 }
@@ -605,6 +619,11 @@
 .ap-options-panel select,
 .ap-options-panel input {
     margin-bottom: 8px;
+}
+
+.ap-scroll-btn {
+    width: 100%;
+    margin-top: 2px;
 }
 
 .ap-bottom-controls-clean {

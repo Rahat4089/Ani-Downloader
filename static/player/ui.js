@@ -82,6 +82,7 @@ export class PlayerUI {
 
                             <label>Subtitles</label>
                             <select class="ap-select ap-subtitle-select"></select>
+                            <button class="ap-btn ap-scroll-btn" data-action="scroll-episodes" type="button">Scroll Episodes</button>
                         </div>
 
                         <div class="ap-bottom-controls ap-bottom-controls-clean ap-hidden">
@@ -230,6 +231,15 @@ export class PlayerUI {
         if (this.locked) return;
         this.optionsPanel.classList.toggle("ap-hidden");
         this.revealControls();
+    }
+
+    scrollToEpisodeList() {
+        const activeItem = this.episodeList.querySelector(".ap-episode-item.ap-active");
+        if (activeItem) {
+            activeItem.scrollIntoView({ behavior: "smooth", block: "center" });
+            return;
+        }
+        this.episodeList.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
     updateTime(current, duration) {
