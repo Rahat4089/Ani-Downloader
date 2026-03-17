@@ -24,10 +24,7 @@
                 <div class="video-overlay">
                     <div class="overlay-top">
                         <div id="now-playing" class="now-playing">Select an episode to start watching.</div>
-                        <div class="overlay-top-actions">
-                            <span id="recording-indicator" class="recording-indicator hidden">⏺ REC 00:00</span>
-                            <a id="download-current-btn" class="btn btn-download-current" href="#">⬇️ Download</a>
-                        </div>
+                        <a id="download-current-btn" class="btn btn-download-current" href="#">⬇️ Download</a>
                     </div>
 
                     <div class="overlay-bottom">
@@ -57,10 +54,6 @@
                                     <option value="1.5">1.5x</option>
                                     <option value="2">2x</option>
                                 </select>
-                                <button id="loop-btn" class="btn btn-player" type="button">🔁</button>
-                                <button id="theater-btn" class="btn btn-player" type="button">🖥️</button>
-                                <button id="screenshot-btn" class="btn btn-player" type="button">📸</button>
-                                <button id="record-btn" class="btn btn-player" type="button">⏺ Rec</button>
                                 <button id="pip-btn" class="btn btn-player" type="button">PiP</button>
                                 <button id="fullscreen-btn" class="btn btn-player" type="button">⛶</button>
                             </div>
@@ -70,9 +63,8 @@
             </div>
 
             <p class="player-help">
-                Shortcuts: Space play/pause • ←/→ seek • ↑/↓ volume • M mute • F fullscreen • N/P next/prev • L loop • T theater • R record
+                Shortcuts: Space play/pause • ←/→ seek • ↑/↓ volume • M mute • F fullscreen • N/P next/prev
             </p>
-            <div id="player-message" class="player-message"></div>
         </div>
 
         <div class="danger-zone">
@@ -88,19 +80,8 @@
         const animeName = "{{ anime_name }}";
         let episodes = [];
         let currentEpisodeIndex = -1;
-        let pendingRestoreFile = null;
-        let controlsHideTimer = null;
-        let messageTimer = null;
-        let recordingTimer = null;
-        let recordingStartTime = 0;
-        let mediaRecorder = null;
-        let recordedChunks = [];
-        let isTheaterMode = false;
-        let lastSavedSecond = -1;
 
         const videoPlayer = document.getElementById('video-player');
-        const playerFrame = document.querySelector('.video-frame-enhanced');
-        const playerCard = document.querySelector('.video-player-card');
         const progressSlider = document.getElementById('progress-slider');
         const currentTimeLabel = document.getElementById('current-time');
         const durationTimeLabel = document.getElementById('duration-time');
@@ -112,16 +93,10 @@
         const muteBtn = document.getElementById('mute-btn');
         const volumeSlider = document.getElementById('volume-slider');
         const speedSelect = document.getElementById('speed-select');
-        const loopBtn = document.getElementById('loop-btn');
-        const theaterBtn = document.getElementById('theater-btn');
-        const screenshotBtn = document.getElementById('screenshot-btn');
-        const recordBtn = document.getElementById('record-btn');
         const pipBtn = document.getElementById('pip-btn');
         const fullscreenBtn = document.getElementById('fullscreen-btn');
         const nowPlaying = document.getElementById('now-playing');
         const downloadCurrentBtn = document.getElementById('download-current-btn');
-        const recordingIndicator = document.getElementById('recording-indicator');
-        const playerMessage = document.getElementById('player-message');
         const deleteSeriesBtn = document.getElementById('delete-series-btn');
 
         function formatTime(seconds) {
@@ -130,63 +105,25 @@
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const secs = totalSeconds % 60;
+
             if (hours > 0) {
                 return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
             }
             return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         }
 
-        function showMessage(text, isError = false) {
-            playerMessage.textContent = text;
-            playerMessage.classList.toggle('player-message-error', isError);
-            playerMessage.classList.add('player-message-visible');
-            clearTimeout(messageTimer);
-            messageTimer = setTimeout(() => {
-                playerMessage.classList.remove('player-message-visible');
-            }, 2400);
-        }
-
-        function getCurrentEpisode() {
-            return episodes[currentEpisodeIndex] || null;
-        }
-
-        function getProgressKey(fileName) {
-            return `anime-player-progress:${animeName}:${fileName}`;
-        }
-
-        function saveCurrentProgress() {
-            const episode = getCurrentEpisode();
-            if (!episode || !Number.isFinite(videoPlayer.currentTime) || videoPlayer.currentTime < 1) return;
-            localStorage.setItem(getProgressKey(episode.name), String(videoPlayer.currentTime));
-        }
-
-        function restoreEpisodeProgress(fileName) {
-            const raw = localStorage.getItem(getProgressKey(fileName));
-            if (!raw) return;
-            const seconds = Number(raw);
-            if (!Number.isFinite(seconds) || seconds < 1 || !Number.isFinite(videoPlayer.duration)) return;
-            if (seconds < videoPlayer.duration - 10) {
-                videoPlayer.currentTime = seconds;
-                showMessage(`Resumed at ${formatTime(seconds)}`);
-            }
-        }
-
         function updatePlayButton() {
             playToggleBtn.textContent = videoPlayer.paused ? '▶️ Play' : '⏸ Pause';
-        }
-
-        function updateMuteButton() {
-            muteBtn.textContent = videoPlayer.muted || videoPlayer.volume === 0 ? '🔇' : '🔊';
-        }
-
-        function updateLoopButton() {
-            loopBtn.classList.toggle('btn-player-active', videoPlayer.loop);
         }
 
         function seekBy(seconds) {
             if (!Number.isFinite(videoPlayer.duration)) return;
             const nextTime = Math.min(videoPlayer.duration, Math.max(0, videoPlayer.currentTime + seconds));
             videoPlayer.currentTime = nextTime;
+        }
+
+        function updateMuteButton() {
+            muteBtn.textContent = videoPlayer.muted || videoPlayer.volume === 0 ? '🔇' : '🔊';
         }
 
         function updateEpisodeHighlight() {
@@ -210,157 +147,18 @@
 
         function findPlayableIndex(startIndex, step) {
             for (let idx = startIndex; idx >= 0 && idx < episodes.length; idx += step) {
-                if (episodes[idx].is_video) return idx;
+                if (episodes[idx].is_video) {
+                    return idx;
+                }
             }
             return -1;
-        }
-
-        function showControls() {
-            playerFrame.classList.remove('controls-hidden');
-            clearTimeout(controlsHideTimer);
-            if (!videoPlayer.paused) {
-                controlsHideTimer = setTimeout(() => {
-                    playerFrame.classList.add('controls-hidden');
-                }, 2600);
-            }
-        }
-
-        function stopRecordingTimer() {
-            clearInterval(recordingTimer);
-            recordingTimer = null;
-            recordingIndicator.classList.add('hidden');
-        }
-
-        function updateRecordingIndicator() {
-            const elapsed = Math.max(0, Math.floor((Date.now() - recordingStartTime) / 1000));
-            recordingIndicator.textContent = `⏺ REC ${formatTime(elapsed)}`;
-        }
-
-        function stopRecording(silent = false) {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
-            stopRecordingTimer();
-            recordBtn.classList.remove('btn-player-active');
-            recordBtn.textContent = '⏺ Rec';
-            if (!silent) showMessage('Recording stopped');
-        }
-
-        function getPreferredRecordingMimeType() {
-            if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
-            const preferred = [
-                'video/webm;codecs=vp9,opus',
-                'video/webm;codecs=vp8,opus',
-                'video/webm'
-            ];
-            return preferred.find((item) => MediaRecorder.isTypeSupported(item)) || '';
-        }
-
-        async function startRecording() {
-            if (!videoPlayer.src || typeof videoPlayer.captureStream !== 'function' || !window.MediaRecorder) {
-                showMessage('Recording is not supported in this browser', true);
-                return;
-            }
-
-            try {
-                const stream = videoPlayer.captureStream();
-                const mimeType = getPreferredRecordingMimeType();
-                const options = mimeType ? { mimeType } : undefined;
-                mediaRecorder = new MediaRecorder(stream, options);
-                recordedChunks = [];
-
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data && event.data.size > 0) {
-                        recordedChunks.push(event.data);
-                    }
-                };
-
-                mediaRecorder.onstop = () => {
-                    if (!recordedChunks.length) return;
-                    const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/webm' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    const currentName = getCurrentEpisode()?.name || 'recording';
-                    const safeBase = currentName.replace(/[^\w.\-]+/g, '_');
-                    link.href = url;
-                    link.download = `${safeBase}-recording-${Date.now()}.webm`;
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    URL.revokeObjectURL(url);
-                };
-
-                mediaRecorder.start(1000);
-                recordingStartTime = Date.now();
-                updateRecordingIndicator();
-                recordingIndicator.classList.remove('hidden');
-                recordingTimer = setInterval(updateRecordingIndicator, 1000);
-                recordBtn.classList.add('btn-player-active');
-                recordBtn.textContent = '⏹ Stop Rec';
-                showMessage('Recording started');
-            } catch (error) {
-                console.error('Recording start failed:', error);
-                showMessage('Failed to start recording', true);
-            }
-        }
-
-        function toggleTheaterMode() {
-            isTheaterMode = !isTheaterMode;
-            playerCard.classList.toggle('video-player-theater', isTheaterMode);
-            theaterBtn.classList.toggle('btn-player-active', isTheaterMode);
-            showMessage(isTheaterMode ? 'Theater mode on' : 'Theater mode off');
-        }
-
-        function captureScreenshot() {
-            if (!videoPlayer.src || videoPlayer.readyState < 2) {
-                showMessage('Play a video before taking screenshot', true);
-                return;
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = videoPlayer.videoWidth;
-            canvas.height = videoPlayer.videoHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                showMessage('Screenshot failed', true);
-                return;
-            }
-
-            ctx.drawImage(videoPlayer, 0, 0, canvas.width, canvas.height);
-            const url = canvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            const currentName = getCurrentEpisode()?.name || 'frame';
-            const safeBase = currentName.replace(/[^\w.\-]+/g, '_');
-            link.href = url;
-            link.download = `${safeBase}-${Math.floor(videoPlayer.currentTime)}s.png`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            showMessage('Screenshot saved');
-        }
-
-        async function togglePlayback() {
-            if (!videoPlayer.src) return;
-            if (videoPlayer.paused) {
-                try {
-                    await videoPlayer.play();
-                } catch (error) {
-                    console.error('Unable to start playback:', error);
-                }
-            } else {
-                videoPlayer.pause();
-            }
         }
 
         async function loadEpisode(index, autoplay = true) {
             const selected = episodes[index];
             if (!selected || !selected.is_video) return;
 
-            saveCurrentProgress();
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') stopRecording(true);
-
             currentEpisodeIndex = index;
-            pendingRestoreFile = selected.name;
             videoPlayer.src = getStreamUrl(selected.name);
             downloadCurrentBtn.href = getDownloadUrl(selected.name);
             downloadCurrentBtn.setAttribute('download', selected.name);
@@ -388,8 +186,6 @@
                     throw new Error(payload.error || `HTTP ${response.status}`);
                 }
 
-                localStorage.removeItem(getProgressKey(fileName));
-
                 if (currentEpisodeIndex >= 0 && episodes[currentEpisodeIndex]?.name === fileName) {
                     videoPlayer.pause();
                     videoPlayer.removeAttribute('src');
@@ -399,7 +195,6 @@
                 }
 
                 await loadAnimeFiles();
-                showMessage('Episode deleted');
             } catch (error) {
                 alert(`Failed to delete episode: ${error.message}`);
             }
@@ -468,7 +263,7 @@
 
             updateEpisodeHighlight();
         }
-
+        
         async function loadAnimeFiles() {
             try {
                 const response = await fetch(`/api/library/anime/${encodeURIComponent(animeName)}`);
@@ -477,13 +272,15 @@
                 }
                 const data = await response.json();
                 episodes = data.files || [];
-                const playableCount = episodes.filter((file) => file.is_video).length;
-                document.getElementById('anime-stats').innerHTML =
+                
+                // Update stats
+                const playableCount = episodes.filter(file => file.is_video).length;
+                document.getElementById('anime-stats').innerHTML = 
                     `${data.total_files} files • ${playableCount} playable • ${data.total_size_mb.toFixed(2)} MB total`;
 
                 renderEpisodes();
 
-                const firstPlayableIndex = episodes.findIndex((file) => file.is_video);
+                const firstPlayableIndex = episodes.findIndex(file => file.is_video);
                 if (firstPlayableIndex >= 0) {
                     loadEpisode(firstPlayableIndex, false);
                 } else {
@@ -491,42 +288,48 @@
                 }
             } catch (error) {
                 console.error('Error loading anime files:', error);
-                document.getElementById('episode-list').innerHTML =
+                document.getElementById('episode-list').innerHTML = 
                     '<div class="error">Failed to load episodes</div>';
             }
         }
 
-        playToggleBtn.addEventListener('click', togglePlayback);
-        prevBtn.addEventListener('click', () => {
-            if (!episodes.length || currentEpisodeIndex <= 0) return;
-            const prevPlayable = findPlayableIndex(currentEpisodeIndex - 1, -1);
-            if (prevPlayable >= 0) loadEpisode(prevPlayable, true);
-        });
-        nextBtn.addEventListener('click', () => {
-            if (!episodes.length || currentEpisodeIndex < 0 || currentEpisodeIndex >= episodes.length - 1) return;
-            const nextPlayable = findPlayableIndex(currentEpisodeIndex + 1, 1);
-            if (nextPlayable >= 0) loadEpisode(nextPlayable, true);
-        });
-        rewindBtn.addEventListener('click', () => seekBy(-10));
-        forwardBtn.addEventListener('click', () => seekBy(10));
-        loopBtn.addEventListener('click', () => {
-            videoPlayer.loop = !videoPlayer.loop;
-            updateLoopButton();
-            showMessage(videoPlayer.loop ? 'Loop enabled' : 'Loop disabled');
-        });
-        theaterBtn.addEventListener('click', toggleTheaterMode);
-        screenshotBtn.addEventListener('click', captureScreenshot);
-        recordBtn.addEventListener('click', async () => {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                stopRecording();
+        playToggleBtn.addEventListener('click', async () => {
+            if (!videoPlayer.src) return;
+
+            if (videoPlayer.paused) {
+                try {
+                    await videoPlayer.play();
+                } catch (error) {
+                    console.error('Unable to start playback:', error);
+                }
             } else {
-                await startRecording();
+                videoPlayer.pause();
             }
         });
 
+        prevBtn.addEventListener('click', () => {
+            if (!episodes.length || currentEpisodeIndex <= 0) return;
+            const prevPlayable = findPlayableIndex(currentEpisodeIndex - 1, -1);
+            if (prevPlayable >= 0) {
+                loadEpisode(prevPlayable, true);
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (!episodes.length || currentEpisodeIndex < 0 || currentEpisodeIndex >= episodes.length - 1) return;
+            const nextPlayable = findPlayableIndex(currentEpisodeIndex + 1, 1);
+            if (nextPlayable >= 0) {
+                loadEpisode(nextPlayable, true);
+            }
+        });
+
+        rewindBtn.addEventListener('click', () => seekBy(-10));
+        forwardBtn.addEventListener('click', () => seekBy(10));
+
         progressSlider.addEventListener('input', () => {
             if (!Number.isFinite(videoPlayer.duration)) return;
-            videoPlayer.currentTime = videoPlayer.duration * (Number(progressSlider.value) / 100);
+            const percent = Number(progressSlider.value) / 100;
+            videoPlayer.currentTime = videoPlayer.duration * percent;
         });
 
         volumeSlider.addEventListener('input', () => {
@@ -546,7 +349,6 @@
 
         speedSelect.addEventListener('change', () => {
             videoPlayer.playbackRate = Number(speedSelect.value);
-            showMessage(`Speed ${speedSelect.value}x`);
         });
 
         pipBtn.addEventListener('click', async () => {
@@ -563,70 +365,36 @@
         });
 
         fullscreenBtn.addEventListener('click', async () => {
+            const wrapper = document.querySelector('.video-frame');
             if (!document.fullscreenElement) {
-                await playerFrame.requestFullscreen();
+                await wrapper.requestFullscreen();
             } else {
                 await document.exitFullscreen();
             }
-        });
-
-        videoPlayer.addEventListener('click', togglePlayback);
-        videoPlayer.addEventListener('dblclick', async () => {
-            if (!document.fullscreenElement) {
-                await playerFrame.requestFullscreen();
-            } else {
-                await document.exitFullscreen();
-            }
-        });
-
-        ['mousemove', 'touchstart'].forEach((eventName) => {
-            playerFrame.addEventListener(eventName, showControls, { passive: true });
-        });
-        playerFrame.addEventListener('mouseleave', () => {
-            if (!videoPlayer.paused) playerFrame.classList.add('controls-hidden');
         });
 
         videoPlayer.addEventListener('timeupdate', () => {
             if (!Number.isFinite(videoPlayer.duration) || videoPlayer.duration <= 0) return;
             progressSlider.value = (videoPlayer.currentTime / videoPlayer.duration) * 100;
             currentTimeLabel.textContent = formatTime(videoPlayer.currentTime);
-
-            const rounded = Math.floor(videoPlayer.currentTime);
-            if (rounded % 5 === 0 && rounded !== lastSavedSecond) {
-                lastSavedSecond = rounded;
-                saveCurrentProgress();
-            }
         });
 
         videoPlayer.addEventListener('loadedmetadata', () => {
             durationTimeLabel.textContent = formatTime(videoPlayer.duration);
             currentTimeLabel.textContent = formatTime(videoPlayer.currentTime);
             progressSlider.value = 0;
-
-            if (pendingRestoreFile) {
-                restoreEpisodeProgress(pendingRestoreFile);
-                pendingRestoreFile = null;
-            }
         });
 
-        videoPlayer.addEventListener('play', () => {
-            updatePlayButton();
-            showControls();
-        });
-        videoPlayer.addEventListener('pause', () => {
-            updatePlayButton();
-            clearTimeout(controlsHideTimer);
-            playerFrame.classList.remove('controls-hidden');
-            saveCurrentProgress();
-        });
+        videoPlayer.addEventListener('play', updatePlayButton);
+        videoPlayer.addEventListener('pause', updatePlayButton);
         videoPlayer.addEventListener('volumechange', updateMuteButton);
 
         videoPlayer.addEventListener('ended', () => {
-            saveCurrentProgress();
-            if (videoPlayer.loop) return;
             if (currentEpisodeIndex >= 0 && currentEpisodeIndex < episodes.length - 1) {
                 const nextPlayable = findPlayableIndex(currentEpisodeIndex + 1, 1);
-                if (nextPlayable >= 0) loadEpisode(nextPlayable, true);
+                if (nextPlayable >= 0) {
+                    loadEpisode(nextPlayable, true);
+                }
             }
         });
 
@@ -634,7 +402,6 @@
             const tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
             if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 
-            const key = event.key.toLowerCase();
             if (event.code === 'Space') {
                 event.preventDefault();
                 playToggleBtn.click();
@@ -652,36 +419,19 @@
                 event.preventDefault();
                 videoPlayer.volume = Math.max(0, videoPlayer.volume - 0.05);
                 volumeSlider.value = videoPlayer.volume;
-            } else if (key === 'm') {
+            } else if (event.key.toLowerCase() === 'm') {
                 muteBtn.click();
-            } else if (key === 'f') {
+            } else if (event.key.toLowerCase() === 'f') {
                 fullscreenBtn.click();
-            } else if (key === 'n') {
+            } else if (event.key.toLowerCase() === 'n') {
                 nextBtn.click();
-            } else if (key === 'p') {
+            } else if (event.key.toLowerCase() === 'p') {
                 prevBtn.click();
-            } else if (key === 'l') {
-                loopBtn.click();
-            } else if (key === 't') {
-                theaterBtn.click();
-            } else if (key === 'r') {
-                recordBtn.click();
-            } else if (key === 'c') {
-                screenshotBtn.click();
             }
         });
 
         deleteSeriesBtn.addEventListener('click', deleteSeries);
-        window.addEventListener('beforeunload', () => {
-            saveCurrentProgress();
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-            }
-        });
-
-        updateLoopButton();
-        updatePlayButton();
-        updateMuteButton();
+        
         loadAnimeFiles();
     </script>
 </body>
