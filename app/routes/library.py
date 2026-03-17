@@ -8,11 +8,73 @@ from pathlib import Path
 import mimetypes
 import os
 import shutil
+from urllib.parse import quote
 from app.utils import login_required
 
 library_bp = Blueprint('library', __name__, url_prefix='/api/library')
 
-VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.m4v'}
+VIDEO_EXTENSIONS = {'.mp4', '.mkv', '.webm', '.avi', '.mov', '.m4v', '.m3u8', '.mpd'}
+SUBTITLE_EXTENSIONS = {'.vtt'}
+
+
+def _guess_stream_type(filename):
+    """Map file extension to player stream type."""
+    extension = Path(filename).suffix.lower()
+    if extension == '.m3u8':
+        return 'hls'
+    if extension == '.mpd':
+        return 'dash'
+    return 'mp4'
+
+
+def _episode_title_from_filename(filename):
+    """Create readable episode title from filename."""
+    stem = Path(filename).stem
+    normalized = stem.replace('.', ' ').replace('_', ' ').replace('-', ' ').strip()
+    return ' '.join(word.capitalize() for word in normalized.split())
+
+
+def _build_subtitle_entries(anime_name, anime_path, episode_filename):
+    anime_segment = quote(anime_name, safe='')
+    """Build VTT subtitle list for an episode."""
+    episode_stem = Path(episode_filename).stem.lower()
+    subtitles = []
+    seen = set()
+
+    for item in sorted(anime_path.iterdir()):
+        if not item.is_file():
+            continue
+        if item.suffix.lower() not in SUBTITLE_EXTENSIONS:
+            continue
+
+        subtitle_stem = item.stem.lower()
+        # Prefer sidecar subtitles that share episode stem, but include generic folder tracks too.
+        if episode_stem not in subtitle_stem and not subtitle_stem.startswith('sub'):
+            continue
+
+        label = 'English'
+        language = 'en'
+        if '.jp' in subtitle_stem or '.ja' in subtitle_stem:
+            label = 'Japanese'
+            language = 'ja'
+        elif '.es' in subtitle_stem:
+            label = 'Spanish'
+            language = 'es'
+
+        key = (item.name, language)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        subtitles.append({
+            "label": label,
+            "language": language,
+            "kind": "subtitles",
+            "default": len(subtitles) == 0,
+            "src": f"/api/library/asset/{anime_segment}/{quote(item.name, safe='')}"
+        })
+
+    return subtitles
 
 
 def _is_video_file(filename):
@@ -67,6 +129,27 @@ def _send_anime_file(anime_name, filename, as_attachment):
         mimetype=mimetype or 'application/octet-stream',
         conditional=not as_attachment
     )
+
+
+@library_bp.route('/asset/<path:anime_name>/<path:filename>', methods=['GET'])
+@login_required
+def serve_anime_asset(anime_name, filename):
+    """Serve any in-folder anime asset (video segments, manifests, subtitles)."""
+    try:
+        file_path = _resolve_anime_file_path(anime_name, filename)
+        if not file_path:
+            return jsonify({"error": "File not found"}), 404
+
+        mimetype, _ = mimetypes.guess_type(file_path.name)
+        return send_file(
+            file_path,
+            as_attachment=False,
+            download_name=file_path.name,
+            mimetype=mimetype or 'application/octet-stream',
+            conditional=True
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @library_bp.route('/list', methods=['GET'])
 @login_required
@@ -134,6 +217,85 @@ def get_anime_files(anime_name):
             "files": files,
             "total_files": len(files),
             "total_size_mb": round(sum(f['size'] for f in files) / (1024 * 1024), 2)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@library_bp.route('/player-config/<path:anime_name>', methods=['GET'])
+@login_required
+def get_player_config(anime_name):
+    """Return dynamic anime player config payload."""
+    try:
+        anime_path = _resolve_anime_dir(anime_name)
+        if not anime_path:
+            return jsonify({"error": "Anime not found"}), 404
+
+        video_files = sorted([
+            item for item in anime_path.iterdir()
+            if item.is_file() and _is_video_file(item.name)
+        ], key=lambda path: path.name.lower())
+
+        if not video_files:
+            return jsonify({"error": "No playable files found"}), 404
+
+        episodes = []
+        anime_segment = quote(anime_name, safe='')
+        for index, file_path in enumerate(video_files):
+            stream_type = _guess_stream_type(file_path.name)
+            file_segment = quote(file_path.name, safe='')
+            primary_url = f"/api/library/asset/{anime_segment}/{file_segment}"
+            backup_url = f"/api/library/stream/{anime_segment}/{file_segment}"
+            subtitles = _build_subtitle_entries(anime_name, anime_path, file_path.name)
+
+            video_sources = [
+                {
+                    "id": "server-a",
+                    "label": "Server A",
+                    "type": stream_type,
+                    "url": primary_url
+                }
+            ]
+            if stream_type == 'mp4':
+                video_sources.append({
+                    "id": "server-b",
+                    "label": "Server B",
+                    "type": stream_type,
+                    "url": backup_url
+                })
+
+            episode_number = index + 1
+            next_episode_url = f"/library/{anime_segment}#ep={episode_number + 1}" if episode_number < len(video_files) else ""
+
+            episodes.append({
+                "id": file_path.name,
+                "filename": file_path.name,
+                "episode_number": episode_number,
+                "thumbnail": "/static/player/episode-placeholder.svg",
+                "metadata": {
+                    "title": _episode_title_from_filename(file_path.name),
+                    "synopsis": f"Episode {episode_number} from {anime_name}. Metadata API hook ready."
+                },
+                "config": {
+                    "video_sources": video_sources,
+                    "subtitles": subtitles,
+                    "audio_tracks": [],
+                    "intro_start": 0,
+                    "intro_end": 0,
+                    "outro_start": 0,
+                    "outro_end": 0,
+                    "next_episode_url": next_episode_url,
+                    "timeline_thumbnails": []
+                }
+            })
+
+        return jsonify({
+            "anime_name": anime_name,
+            "ui_language": "en",
+            "seek_short_seconds": 10,
+            "seek_long_seconds": 30,
+            "auto_next_seconds": 8,
+            "episodes": episodes
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

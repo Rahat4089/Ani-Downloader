@@ -1,0 +1,10 @@
+WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+Welcome to the Anime Streaming Player demo.
+
+00:00:04.500 --> 00:00:08.500
+This subtitle track is loaded from the dynamic config.
+
+00:00:09.000 --> 00:00:14.000
+Replace this file with your own per-episode VTT subtitles.

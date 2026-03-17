@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.5" />
+    </linearGradient>
+  </defs>
+  <rect width="480" height="270" fill="url(#bg)" />
+  <g opacity="0.5">
+    <path d="M0 215 C90 170, 210 260, 480 180" stroke="url(#line)" stroke-width="6" fill="none" />
+    <path d="M0 195 C130 120, 250 230, 480 155" stroke="url(#line)" stroke-width="3" fill="none" />
+  </g>
+  <g transform="translate(205,112)">
+    <circle cx="35" cy="23" r="38" fill="#0b1228" stroke="#7dd3fc" stroke-opacity="0.5" />
+    <polygon points="25,8 25,38 50,23" fill="#67e8f9" />
+  </g>
+  <text x="24" y="244" fill="#cbd5e1" font-size="24" font-family="Segoe UI, Arial, sans-serif" letter-spacing="1.5">ANIME EPISODE</text>
+</svg>
