@@ -37,6 +37,12 @@ def library():
     """Library page showing all downloaded anime"""
     return render_template('library.html')
 
+@pages_bp.route('/stats')
+@login_required
+def stats_page():
+    """Dedicated server stats page."""
+    return render_template('stats.html')
+
 @pages_bp.route('/library/<anime_name>')
 @login_required
 def anime_detail(anime_name):
