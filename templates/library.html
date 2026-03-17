@@ -15,12 +15,73 @@
             <p class="subtitle">Your anime collection</p>
         </div>
 
+        <div class="library-bulk-actions">
+            <label class="library-check">
+                <input id="select-all-series" type="checkbox">
+                <span>Select all series</span>
+            </label>
+            <button id="delete-selected-series" class="btn btn-danger-action" type="button" disabled>
+                🗑 Delete Selected Series
+            </button>
+        </div>
+
         <div id="anime-list" class="anime-list">
             <div class="loading">Loading library...</div>
         </div>
     </div>
 
     <script>
+        function getSelectedSeriesNames() {
+            return Array.from(document.querySelectorAll('.series-checkbox:checked'))
+                .map(checkbox => decodeURIComponent(checkbox.dataset.name || ''))
+                .filter(Boolean);
+        }
+
+        function updateSeriesActionState() {
+            const selected = getSelectedSeriesNames();
+            const deleteBtn = document.getElementById('delete-selected-series');
+            deleteBtn.disabled = selected.length === 0;
+            deleteBtn.textContent = selected.length > 0
+                ? `🗑 Delete Selected Series (${selected.length})`
+                : '🗑 Delete Selected Series';
+        }
+
+        async function deleteSingleSeries(seriesName) {
+            const confirmed = confirm(`Delete series?\n\n${seriesName}`);
+            if (!confirmed) return;
+            try {
+                const response = await fetch(`/api/library/anime/${encodeURIComponent(seriesName)}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                loadLibrary();
+            } catch (error) {
+                alert(`Failed to delete series: ${error.message}`);
+            }
+        }
+
+        async function deleteSelectedSeries() {
+            const selected = getSelectedSeriesNames();
+            if (!selected.length) return;
+            const confirmed = confirm(`Delete ${selected.length} selected series?`);
+            if (!confirmed) return;
+
+            try {
+                const response = await fetch('/api/library/anime/bulk', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ anime_names: selected })
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                document.getElementById('select-all-series').checked = false;
+                loadLibrary();
+            } catch (error) {
+                alert(`Failed to delete selected series: ${error.message}`);
+            }
+        }
+
         async function loadLibrary() {
             try {
                 const response = await fetch('/api/library/list');
@@ -30,15 +91,20 @@
                 
                 if (!library || library.length === 0) {
                     container.innerHTML = '<div class="empty-state">📭 No anime downloaded yet</div>';
+                    updateSeriesActionState();
                     return;
                 }
                 
                 container.innerHTML = library.map(anime => `
-                    <a href="/library/${encodeURIComponent(anime.name)}" class="anime-card">
+                    <div class="anime-card library-series-card">
                         <div class="anime-card-header">
                             <h3>${anime.name}</h3>
                         </div>
                         <div class="anime-card-body">
+                            <label class="library-check">
+                                <input class="series-checkbox" type="checkbox" data-name="${encodeURIComponent(anime.name)}">
+                                <span>Select</span>
+                            </label>
                             <div class="stat">
                                 <span class="stat-label">Episodes:</span>
                                 <span class="stat-value">${anime.total_files}</span>
@@ -48,15 +114,38 @@
                                 <span class="stat-value">${anime.total_size_mb.toFixed(2)} MB</span>
                             </div>
                         </div>
-                    </a>
+                        <div class="library-series-actions">
+                            <a href="/library/${encodeURIComponent(anime.name)}" class="btn btn-download">▶️ Open</a>
+                            <button class="btn btn-delete-episode single-series-delete" type="button" data-name="${encodeURIComponent(anime.name)}">
+                                🗑 Delete
+                            </button>
+                        </div>
+                    </div>
                 `).join('');
+
+                document.querySelectorAll('.series-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('change', updateSeriesActionState);
+                });
+                document.querySelectorAll('.single-series-delete').forEach(button => {
+                    button.addEventListener('click', () => deleteSingleSeries(decodeURIComponent(button.dataset.name || '')));
+                });
+                updateSeriesActionState();
             } catch (error) {
                 console.error('Error loading library:', error);
                 document.getElementById('anime-list').innerHTML = 
                     '<div class="error">Failed to load library</div>';
             }
         }
-        
+
+        document.getElementById('select-all-series').addEventListener('change', (event) => {
+            const checked = event.target.checked;
+            document.querySelectorAll('.series-checkbox').forEach(checkbox => {
+                checkbox.checked = checked;
+            });
+            updateSeriesActionState();
+        });
+        document.getElementById('delete-selected-series').addEventListener('click', deleteSelectedSeries);
+
         loadLibrary();
         setInterval(loadLibrary, 30000);
     </script>

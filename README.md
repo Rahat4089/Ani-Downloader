@@ -13,6 +13,7 @@ A powerful web-based anime downloader with a clean Flask interface for downloadi
 - 🔍 **Smart Search**: Search and browse anime titles from anikai.to
 - 📥 **Batch Downloads**: Download single episodes or entire series
 - 📚 **Library Management**: Organize and manage your anime collection
+- ▶️ **Built-in Web Player**: Watch downloaded episodes directly in the browser with playback controls
 - 🎨 **Modern Web UI**: Clean, responsive interface with real-time download progress
 - 🔐 **Authentication**: Secure login system (default: admin/admin)
 - 🐳 **Docker Support**: Easy deployment with Docker and Docker Compose
