@@ -308,7 +308,7 @@ class AnimeStreamingPlayerApp {
         else if (action === "retry") this.playerCore.retry({ autoplay: true, startTime: this.ui.video.currentTime });
         else if (action === "switch-server") this.switchServer(this.playerCore.currentServerIndex + 1);
         else if (action === "toggle-options") this.toggleOptionsMenu();
-        else if (action === "scroll-episodes") this.ui.scrollToEpisodeList();
+        else if (action === "toggle-episode-hover") this.ui.toggleEpisodeHover();
         else if (action === "toggle-lock") this.toggleLock();
         else if (action === "delete-selected-episodes") this.deleteSelectedEpisodes();
         else if (action === "delete-series") this.deleteSeries();

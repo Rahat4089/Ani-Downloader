@@ -11,8 +11,10 @@ const Icons = {
     next: icon("M5 5v14M9 12l8-7v14l-8-7z"),
     fullscreen: icon("M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"),
     dots: icon("M6 12h.01M12 12h.01M18 12h.01"),
+    episodes: icon("M4 6h16M4 12h16M4 18h16"),
     lock: icon("M7 11V8a5 5 0 0110 0v3M6 11h12v10H6z"),
     unlock: icon("M7 11V8a5 5 0 019.4-2.3"),
+    close: icon("M18 6L6 18M6 6l12 12"),
     playPulse: icon("M8 5l11 7-11 7V5z"),
     pausePulse: icon("M8 5h3v14H8zM13 5h3v14h-3z")
 };
@@ -50,8 +52,11 @@ export class PlayerUI {
                         <div class="ap-play-pulse"></div>
 
                         <div class="ap-top-actions">
-                            <button class="ap-btn ap-lock-btn" data-action="toggle-lock" title="Lock">${Icons.lock}</button>
-                            <button class="ap-btn ap-more-btn ap-hidden" data-action="toggle-options" title="More">${Icons.dots}</button>
+                            <button class="ap-btn ap-episodes-btn" data-action="toggle-episode-hover" title="Episodes">${Icons.episodes}</button>
+                            <div class="ap-top-actions-right">
+                                <button class="ap-btn ap-lock-btn" data-action="toggle-lock" title="Lock">${Icons.lock}</button>
+                                <button class="ap-btn ap-more-btn ap-hidden" data-action="toggle-options" title="More">${Icons.dots}</button>
+                            </div>
                         </div>
 
                         <div class="ap-options-panel ap-hidden">
@@ -82,7 +87,14 @@ export class PlayerUI {
 
                             <label>Subtitles</label>
                             <select class="ap-select ap-subtitle-select"></select>
-                            <button class="ap-btn ap-scroll-btn" data-action="scroll-episodes" type="button">Scroll Episodes</button>
+                        </div>
+
+                        <div class="ap-episode-hover ap-hidden">
+                            <div class="ap-episode-hover-head">
+                                <span>Episodes</span>
+                                <button class="ap-btn ap-mini-btn" data-action="toggle-episode-hover" title="Close">${Icons.close}</button>
+                            </div>
+                            <div class="ap-episode-hover-list"></div>
                         </div>
 
                         <div class="ap-bottom-controls ap-bottom-controls-clean ap-hidden">
@@ -136,10 +148,13 @@ export class PlayerUI {
         this.lockButton = this.root.querySelector(".ap-lock-btn");
         this.moreButton = this.root.querySelector(".ap-more-btn");
         this.optionsPanel = this.root.querySelector(".ap-options-panel");
+        this.episodeHover = this.root.querySelector(".ap-episode-hover");
+        this.episodeHoverList = this.root.querySelector(".ap-episode-hover-list");
         this.bottomControls = this.root.querySelector(".ap-bottom-controls");
         this.episodeList = this.root.querySelector(".ap-episode-list");
         this.selectAll = this.root.querySelector(".ap-select-all");
         this.locked = false;
+        this.lockHintTimer = null;
     }
 
     bindEvents() {
@@ -205,8 +220,10 @@ export class PlayerUI {
         const active = document.activeElement;
         if (!active) return false;
         if (this.optionsPanel.contains(active)) return true;
+        if (this.episodeHover.contains(active)) return true;
         if (this.bottomControls.contains(active)) return true;
         if (!this.optionsPanel.classList.contains("ap-hidden")) return true;
+        if (!this.episodeHover.classList.contains("ap-hidden")) return true;
         return false;
     }
 
@@ -216,11 +233,19 @@ export class PlayerUI {
             this.bottomControls.classList.add("ap-hidden");
             this.moreButton.classList.add("ap-hidden");
             this.optionsPanel.classList.add("ap-hidden");
+            this.episodeHover.classList.add("ap-hidden");
             this.lockButton.innerHTML = Icons.unlock;
             this.videoWrap.classList.add("ap-locked");
+            this.videoWrap.classList.add("ap-lock-hint");
+            clearTimeout(this.lockHintTimer);
+            this.lockHintTimer = setTimeout(() => {
+                this.videoWrap.classList.remove("ap-lock-hint");
+            }, 1000);
             this.root.classList.add("ap-screen-locked");
         } else {
+            clearTimeout(this.lockHintTimer);
             this.lockButton.innerHTML = Icons.lock;
+            this.videoWrap.classList.remove("ap-lock-hint");
             this.videoWrap.classList.remove("ap-locked");
             this.root.classList.remove("ap-screen-locked");
             this.revealControls();
@@ -230,16 +255,15 @@ export class PlayerUI {
     toggleOptionsMenu() {
         if (this.locked) return;
         this.optionsPanel.classList.toggle("ap-hidden");
+        this.episodeHover.classList.add("ap-hidden");
         this.revealControls();
     }
 
-    scrollToEpisodeList() {
-        const activeItem = this.episodeList.querySelector(".ap-episode-item.ap-active");
-        if (activeItem) {
-            activeItem.scrollIntoView({ behavior: "smooth", block: "center" });
-            return;
-        }
-        this.episodeList.scrollIntoView({ behavior: "smooth", block: "start" });
+    toggleEpisodeHover() {
+        if (this.locked) return;
+        this.episodeHover.classList.toggle("ap-hidden");
+        this.optionsPanel.classList.add("ap-hidden");
+        this.revealControls();
     }
 
     updateTime(current, duration) {
@@ -327,6 +351,19 @@ export class PlayerUI {
         });
         this.episodeList.querySelectorAll("[data-episode-delete]").forEach((node) => {
             node.addEventListener("click", () => this.handlers.onDeleteEpisode?.(Number(node.getAttribute("data-episode-delete"))));
+        });
+
+        this.episodeHoverList.innerHTML = episodes.map((episode, index) => `
+            <button class="ap-episode-hover-item ${index === currentIndex ? "ap-active" : ""}" data-episode-hover-play="${index}">
+                <span>EP ${episode.episode_number}</span>
+                <span>${episode.metadata?.title || episode.filename}</span>
+            </button>
+        `).join("");
+        this.episodeHoverList.querySelectorAll("[data-episode-hover-play]").forEach((node) => {
+            node.addEventListener("click", () => {
+                this.handlers.onEpisodeSelect?.(Number(node.getAttribute("data-episode-hover-play")));
+                this.episodeHover.classList.add("ap-hidden");
+            });
         });
     }
 
